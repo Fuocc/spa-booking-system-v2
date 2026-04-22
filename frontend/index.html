@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Đặt lịch spa YOi - Trải nghiệm thư giãn tuyệt vời. Đặt lịch nhanh chóng, dễ dàng.">
+  <title>Đặt Lịch</title>
+  <link rel="icon" type="image/png" href="./public/favicon-256x256.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <!-- Booking Section -->
+  <section class="booking-section" id="booking">
+    <div class="booking-container">
+      <h2 class="section-title">Đặt lịch</h2>
+
+      <!-- Step Indicator -->
+      <div class="steps-indicator" id="steps-indicator">
+        <div class="step-item active" data-step="1">
+          <div class="step-circle">1</div>
+          <span class="step-label">Số người</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-item" data-step="2">
+          <div class="step-circle">2</div>
+          <span class="step-label">Ngày giờ</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-item" data-step="3">
+          <div class="step-circle">3</div>
+          <span class="step-label">Chi nhánh</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-item" data-step="4">
+          <div class="step-circle">4</div>
+          <span class="step-label">Thông tin</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-item" data-step="5">
+          <div class="step-circle">5</div>
+          <span class="step-label">Xác nhận</span>
+        </div>
+      </div>
+
+      <!-- Booking Form -->
+      <form id="booking-form" class="booking-form" autocomplete="off">
+
+        <!-- Step 1: Guests + Service (skip allowed) -->
+        <div class="form-step active" id="step-1">
+          <h3 class="step-title">Chọn số người & dịch vụ</h3>
+          <p class="step-desc">Chọn số người và dịch vụ (hoặc Skip để giữ chỗ 60 phút).</p>
+
+          <div class="form-group">
+            <label for="num-guests" class="form-label">Số người</label>
+            <select id="num-guests" name="num_guests" class="form-select" required>
+              <option value="1" selected>1 người</option>
+              <option value="2">2 người</option>
+              <option value="3">3 người</option>
+              <option value="4">4 người</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="service" class="form-label">Dịch vụ</label>
+            <select id="service" name="service" class="form-select">
+              <option value="" selected>Giữ chỗ (60 phút)</option>
+            </select>
+          </div>
+
+          <!-- Service Detail Card -->
+          <div class="service-detail-card" id="service-detail" style="display: none;">
+            <div class="service-detail-header">
+              <h4 id="service-detail-name"></h4>
+              <span class="service-price" id="service-detail-price"></span>
+            </div>
+            <p class="service-description" id="service-detail-desc"></p>
+            <div class="service-meta">
+              <span class="service-duration" id="service-detail-duration">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span id="service-duration-text"></span>
+              </span>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <div style="font-size: 13px; color: var(--body-gray);">
+              Hệ thống sẽ tự tìm khung giờ trống phù hợp theo số người và thời lượng.
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Date & Time (merged availability) -->
+        <div class="form-step" id="step-2">
+          <h3 class="step-title">Chọn ngày & giờ</h3>
+          <p class="step-desc">Hiển thị lịch trống của toàn hệ thống (gộp 2 chi nhánh).</p>
+
+          <div class="form-group">
+            <label for="booking-date" class="form-label">Ngày</label>
+            <select id="booking-date" name="booking_date" class="form-select" required>
+              <option value="" disabled selected>Chọn ngày</option>
+            </select>
+          </div>
+
+          <div class="time-slots-container" id="time-slots-container" style="display: none;">
+            <label class="form-label">Khung giờ</label>
+            <div class="time-slots-info">
+              <span class="slot-legend available"></span> Còn trống
+              <span class="slot-legend unavailable"></span> Hết chỗ / Không nhận
+            </div>
+            <div class="time-slots-grid" id="time-slots-grid">
+              <!-- Time slots populated by JS -->
+            </div>
+          </div>
+
+          <input type="hidden" id="selected-time" name="start_time">
+        </div>
+
+        <!-- Step 3: Branch selection (only if both available) -->
+        <div class="form-step" id="step-3">
+          <h3 class="step-title">Chọn chi nhánh</h3>
+          <p class="step-desc">Nếu chỉ 1 chi nhánh trống, hệ thống sẽ tự chọn.</p>
+
+          <div class="form-group">
+            <label for="branch" class="form-label">Chi nhánh</label>
+            <select id="branch" name="branch" class="form-select" required>
+              <option value="" disabled selected>Chọn chi nhánh</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <div style="font-size: 13px; color: var(--body-gray);" id="branch-auto-hint" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Step 4: Customer Info + Notes -->
+        <div class="form-step" id="step-4">
+          <h3 class="step-title">Thông tin khách hàng</h3>
+          <p class="step-desc">Vui lòng cung cấp thông tin liên hệ của bạn.</p>
+
+          <div class="form-group">
+            <label for="customer-name" class="form-label">Họ và tên</label>
+            <input type="text" id="customer-name" name="customer_name" class="form-input" placeholder="Nhập họ và tên"
+              required>
+          </div>
+
+          <div class="form-group">
+            <label for="customer-phone" class="form-label">Số điện thoại</label>
+            <input type="tel" id="customer-phone" name="customer_phone" class="form-input" placeholder="0901234567"
+              required pattern="[0-9]{10,11}">
+          </div>
+
+          <div class="form-group">
+            <label for="customer-email" class="form-label">Email <span class="optional-tag">(không bắt
+                buộc)</span></label>
+            <input type="email" id="customer-email" name="customer_email" class="form-input"
+              placeholder="email@example.com">
+          </div>
+
+          <div class="form-group">
+            <label for="notes" class="form-label">Ghi chú <span class="optional-tag">(không bắt buộc)</span></label>
+            <textarea id="notes" name="notes" class="form-textarea" placeholder="Yêu cầu đặc biệt, dị ứng, v.v..."
+              rows="3"></textarea>
+          </div>
+        </div>
+
+        <!-- Step 5: Confirmation -->
+        <div class="form-step" id="step-5">
+          <h3 class="step-title">Xác nhận đặt lịch</h3>
+          <p class="step-desc">Vui lòng kiểm tra lại thông tin trước khi xác nhận.</p>
+
+          <div class="confirmation-card" id="confirmation-card">
+            <div class="confirm-row">
+              <span class="confirm-label">Chi nhánh</span>
+              <span class="confirm-value" id="confirm-branch"></span>
+            </div>
+            <div class="confirm-row">
+              <span class="confirm-label">Số người</span>
+              <span class="confirm-value" id="confirm-guests"></span>
+            </div>
+            <div class="confirm-divider"></div>
+            <div class="confirm-row">
+              <span class="confirm-label">Khách hàng</span>
+              <span class="confirm-value" id="confirm-name"></span>
+            </div>
+            <div class="confirm-row">
+              <span class="confirm-label">Số điện thoại</span>
+              <span class="confirm-value" id="confirm-phone"></span>
+            </div>
+            <div class="confirm-row">
+              <span class="confirm-label">Email</span>
+              <span class="confirm-value" id="confirm-email"></span>
+            </div>
+            <div class="confirm-divider"></div>
+            <div class="confirm-row">
+              <span class="confirm-label">Dịch vụ</span>
+              <span class="confirm-value" id="confirm-service"></span>
+            </div>
+            <div class="confirm-row">
+              <span class="confirm-label">Thời lượng</span>
+              <span class="confirm-value" id="confirm-duration"></span>
+            </div>
+            <div class="confirm-divider"></div>
+            <div class="confirm-row">
+              <span class="confirm-label">Ngày</span>
+              <span class="confirm-value" id="confirm-date"></span>
+            </div>
+            <div class="confirm-row">
+              <span class="confirm-label">Giờ</span>
+              <span class="confirm-value" id="confirm-time"></span>
+            </div>
+            <div class="confirm-divider"></div>
+            <div class="confirm-row">
+              <span class="confirm-label">Ghi chú</span>
+              <span class="confirm-value" id="confirm-notes"></span>
+            </div>
+            <div class="confirm-divider"></div>
+            <div class="confirm-row total">
+              <span class="confirm-label">Tổng tiền</span>
+              <span class="confirm-value" id="confirm-price"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions" id="form-actions">
+          <button type="button" class="btn-secondary" id="btn-prev" style="display: none;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Quay lại
+          </button>
+          <button type="button" class="btn-primary" id="btn-next">
+            Tiếp tục
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+          <button type="submit" class="btn-primary btn-submit" id="btn-submit" style="display: none;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            Xác nhận đặt lịch
+          </button>
+        </div>
+      </form>
+
+      <!-- Success Message -->
+      <div class="success-message" id="success-message" style="display: none;">
+        <div class="success-icon">✓</div>
+        <h3>Đặt lịch thành công!</h3>
+        <p>Cảm ơn bạn đã đặt lịch tại YOi Spa. Chúng tôi sẽ liên hệ xác nhận sớm nhất.</p>
+        <button type="button" class="btn-primary" id="btn-new-booking">Đặt lịch mới</button>
+      </div>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
