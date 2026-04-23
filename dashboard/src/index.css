@@ -103,7 +103,8 @@ textarea {
   flex-direction: column;
 }
 
-.page-content {
+
+.page-content>div:not(.full-view) {
   padding: 32px;
   flex: 1;
 }
@@ -822,13 +823,25 @@ textarea {
 /* ============================================
    Calendar View (Google Calendar-style)
    ============================================ */
-
 .cal-toolbar {
+  display: flex;
+  flex-flow: column;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.cal-toolbar-wrap {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+  padding: 24px;
+  background-color: var(--white);
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .cal-toolbar-left {
@@ -1415,25 +1428,6 @@ textarea {
 }
 
 /* --- New Calendar Styles (Premium Overhaul) --- */
-.cal-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 24px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;
-  top: 0;
-  left: 0;
-  z-index: 3;
-}
-
-.cal-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .cal-container {
   background: white;
   overflow: hidden;
@@ -1450,6 +1444,7 @@ textarea {
 .cal-staff-header-wrap {
   display: grid;
   grid-template-columns: 80px repeat(var(--staff-count, 1), 1fr);
+  width: 100%;
 }
 
 .cal-staff-header {

@@ -401,53 +401,49 @@ function Bookings({ data }) {
   const todayStr = toDateStr(new Date());
 
   return (
-    <div>
-      {/* Header */}
-      <div className="page-header">
-        <div style={{ display: 'flex', gap: 8 }}>
-
-        </div>
-      </div>
-
+    <div className='full-view' style={{ '--staff-count': employees.length, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
       {/* Calendar Toolbar */}
       <div className="cal-toolbar">
-        <div className="cal-toolbar-left">
-          <span className="cal-week-label">
-            {currentDate.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
-          </span>
-          <button className="btn-icon" onClick={goPrev} title="Ngày trước"><FiChevronLeft /></button>
-          <button className="btn btn-sm btn-ghost" style={{ fontSize: 12, fontWeight: 500 }} onClick={goToday}>Hôm nay</button>
-          <button className="btn-icon" onClick={goNext} title="Ngày sau"><FiChevronRight /></button>
-        </div>
-        <div className="cal-toolbar-right">
-          <div className="cal-view-toggle">
-            <button className={`cal-view-btn${viewMode === 'calendar' ? ' active' : ''}`} onClick={() => setViewMode('calendar')}>
-              <FiCalendar size={14} />
-            </button>
-            <button className={`cal-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => setViewMode('list')}>
-              <FiList size={14} />
+        <div className="cal-toolbar-wrap">
+          <div className="cal-toolbar-left">
+            <span className="cal-week-label">
+              {currentDate.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+            </span>
+            <button className="btn-icon" onClick={goPrev} title="Ngày trước"><FiChevronLeft /></button>
+            <button className="btn btn-sm btn-ghost" style={{ fontSize: 12, fontWeight: 500 }} onClick={goToday}>Hôm nay</button>
+            <button className="btn-icon" onClick={goNext} title="Ngày sau"><FiChevronRight /></button>
+          </div>
+          <div className="cal-toolbar-right">
+            <div className="cal-view-toggle">
+              <button className={`cal-view-btn${viewMode === 'calendar' ? ' active' : ''}`} onClick={() => setViewMode('calendar')}>
+                <FiCalendar size={14} />
+              </button>
+              <button className={`cal-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => setViewMode('list')}>
+                <FiList size={14} />
+              </button>
+            </div>
+            <select className="form-select" style={{ maxWidth: 200 }}
+              value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <button className="btn btn-primary" onClick={() => openBookingModal()}>
+              <FiPlus />
             </button>
           </div>
-          <select className="form-select" style={{ maxWidth: 200 }}
-            value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
-            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <button className="btn btn-primary" onClick={() => openBookingModal()}>
-            <FiPlus />
-          </button>
+        </div>
+        <div className="cal-staff-header-wrap">
+          {/* Header row */}
+          <div className="cal-staff-header"></div>
+          {employees.map(emp => (
+            <div key={emp.id} className="cal-staff-header">{emp.name}</div>
+          ))}
         </div>
       </div>
 
       {/* Calendar View */}
       {viewMode === 'calendar' ? (
-        <div className="cal-container" style={{ '--staff-count': employees.length, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
-          <div className="cal-staff-header-wrap">
-            {/* Header row */}
-            <div className="cal-staff-header"></div>
-            {employees.map(emp => (
-              <div key={emp.id} className="cal-staff-header">{emp.name}</div>
-            ))}
-          </div>
+        <div className="cal-container">
+
           <div className='calendar-grid'>
             {/* Time labels column */}
             <div className="cal-time-column">

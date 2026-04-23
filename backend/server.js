@@ -31,9 +31,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Serve static frontend files
-app.use(express.static(path.join(__dirname, '..', 'frontend')));
-
 // API Routes
 app.use('/api/branches', require('./routes/branches'));
 app.use('/api/services', require('./routes/services'));
@@ -46,6 +43,9 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/employee-schedules', require('./routes/employeeSchedules'));
 app.use('/api/webhooks', require('./routes/webhooks'));
 
+// Serve static frontend files
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -54,6 +54,10 @@ app.get('/api/health', (req, res) => {
 // Fallback to serve frontend
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
+});
+
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: `Route ${req.method} ${req.originalUrl} not found` });
 });
 
 app.listen(PORT, () => {
