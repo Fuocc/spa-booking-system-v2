@@ -1422,8 +1422,10 @@ textarea {
   padding: 16px 24px 20px;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
 }
 
 .cal-toolbar-right {
@@ -1434,10 +1436,7 @@ textarea {
 
 .cal-container {
   background: white;
-  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  margin-bottom: 24px;
 }
 
 .cal-staff-grid {

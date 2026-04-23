@@ -73,7 +73,7 @@ function Bookings({ data }) {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Booking modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -404,14 +404,8 @@ function Bookings({ data }) {
     <div>
       {/* Header */}
       <div className="page-header">
-        <div>
-          <h1 className="page-title">Lịch hẹn</h1>
-          <p className="page-subtitle">Quản lý lịch hẹn spa</p>
-        </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary" onClick={() => openBookingModal()}>
-            <FiPlus /> Đặt lịch mới
-          </button>
+
         </div>
       </div>
 
@@ -426,10 +420,6 @@ function Bookings({ data }) {
           <button className="btn-icon" onClick={goNext} title="Ngày sau"><FiChevronRight /></button>
         </div>
         <div className="cal-toolbar-right">
-          <select className="form-select" style={{ maxWidth: 200 }}
-            value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
-            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
           <div className="cal-view-toggle">
             <button className={`cal-view-btn${viewMode === 'calendar' ? ' active' : ''}`} onClick={() => setViewMode('calendar')}>
               <FiCalendar size={14} />
@@ -438,6 +428,13 @@ function Bookings({ data }) {
               <FiList size={14} />
             </button>
           </div>
+          <select className="form-select" style={{ maxWidth: 200 }}
+            value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <button className="btn btn-primary" onClick={() => openBookingModal()}>
+            <FiPlus />
+          </button>
         </div>
       </div>
 

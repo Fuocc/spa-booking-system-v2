@@ -81,10 +81,8 @@ router.delete('/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('employees')
-      .update({ is_active: false })
-      .eq('id', req.params.id)
-      .select()
-      .single();
+      .delete()
+      .eq('id', req.params.id);
 
     if (error) throw error;
     res.json({ message: 'Employee deactivated successfully' });
