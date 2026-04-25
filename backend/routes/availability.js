@@ -236,7 +236,7 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
     for (let m = 0; m < 60; m += SLOT_STEP_MINUTES) {
       const startMinutes = h * 60 + m;
-      const endMinutes = startMinutes + duration;
+      const endMinutes = startMinutes + duration + 15;
 
       if (endMinutes > CLOSE_HOUR * 60) continue;
 

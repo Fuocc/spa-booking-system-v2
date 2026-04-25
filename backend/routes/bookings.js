@@ -67,7 +67,7 @@ router.get('/:id', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { service_id, branch_id, start_time, employee_id } = req.body;
+    const { service_id, branch_id, start_time, end_time: clientEndTime, employee_id } = req.body;
 
     // Basic validation
     if (!service_id || !branch_id || !start_time || !employee_id) {
@@ -114,12 +114,15 @@ router.put('/:id', async (req, res) => {
       return res.status(409).json({ error: 'Employee does not belong to selected branch' });
     }
 
-    // 5) Recalculate end_time & price
-    const startMinutes = timeToMinutes(start_time);
-    const endMinutes = startMinutes + (service.duration_minutes || 60);
-    const endH = Math.floor(endMinutes / 60);
-    const endM = endMinutes % 60;
-    const end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    // 5) Recalculate end_time & price (Use client's end_time if provided)
+    let end_time = clientEndTime;
+    if (!end_time) {
+      const startMinutes = timeToMinutes(start_time);
+      const endMinutes = startMinutes + (service.duration_minutes || 60) + 15;
+      const endH = Math.floor(endMinutes / 60);
+      const endM = endMinutes % 60;
+      end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    }
 
     // NOTE: total_price in your create flow is stored as service.price (not * num_guests)
     const total_price = service.price || 0;
@@ -162,14 +165,14 @@ router.put('/:id', async (req, res) => {
  *   duration_minutes (required if service_id is null),
  *   num_guests,
  *   customer_name, customer_phone, customer_email,
- *   booking_date, start_time, notes
+ *   booking_date, start_time, end_time, notes
  */
 router.post('/', async (req, res) => {
   try {
     const {
       branch_id, service_id, duration_minutes, num_guests,
       customer_name, customer_phone, customer_email,
-      booking_date, start_time, notes
+      booking_date, start_time, end_time: clientEndTime, notes
     } = req.body;
 
     if (!branch_id || !customer_name || !customer_phone || !booking_date || !start_time) {
@@ -202,12 +205,15 @@ router.post('/', async (req, res) => {
       price = 0;
     }
 
-    // 2) Calculate end_time
-    const startMinutes = timeToMinutes(start_time);
-    const endMinutes = startMinutes + duration;
-    const endH = Math.floor(endMinutes / 60);
-    const endM = endMinutes % 60;
-    const end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    // 2) Calculate end_time (Use client's end_time if provided)
+    let end_time = clientEndTime;
+    if (!end_time) {
+      const startMinutes = timeToMinutes(start_time);
+      const endMinutes = startMinutes + duration + 15;
+      const endH = Math.floor(endMinutes / 60);
+      const endM = endMinutes % 60;
+      end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    }
 
     // 3) Find or create customer
     let customer;

@@ -30,7 +30,7 @@ function EmployeeSchedules() {
   const [filterBranch, setFilterBranch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
-    employee_id: '', start_time: '10:00', end_time: '22:00',
+    employee_id: '', start_time: '10:00', end_time: '20:00',
     is_day_off: false, note: '', selectedDays: []
   });
 
@@ -88,7 +88,7 @@ function EmployeeSchedules() {
   const openScheduleModal = (empId) => {
     setScheduleForm({
       employee_id: empId || employees[0]?.id || '',
-      start_time: '10:00', end_time: '22:00',
+      start_time: '10:00', end_time: '20:00',
       is_day_off: false, note: '', selectedDays: []
     });
     setModalOpen(true);
@@ -137,18 +137,24 @@ function EmployeeSchedules() {
     }
   };
 
-  // NEW: create default schedules 10:00-22:00 for ALL employees in current week
-  const createDefaultSchedulesForWeek = async () => {
+  // NEW: create default schedules 10:00-20:00 for ALL employees in current month
+  const createDefaultSchedulesForMonth = async () => {
     if (employees.length === 0) {
       alert('Chưa có nhân viên');
       return;
     }
 
-    if (!confirm('Tạo lịch mặc định 10:00 - 22:00 cho TẤT CẢ nhân viên trong tuần này?')) return;
+    if (!confirm('Tạo lịch mặc định 10:00 - 20:00 cho TẤT CẢ nhân viên trong tháng này?')) return;
 
     setCreatingDefault(true);
     try {
-      const dates = weekDates.map(d => toDateStr(d));
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const dates = Array.from({ length: daysInMonth }, (_, i) => {
+        const d = new Date(year, month, i + 1);
+        return toDateStr(d);
+      });
 
       // Create schedules for each employee (bulk per employee)
       // API createBulkSchedule does upsert on (employee_id,date) so safe to run multiple times.
@@ -157,7 +163,7 @@ function EmployeeSchedules() {
           employee_id: emp.id,
           dates,
           start_time: '10:00',
-          end_time: '22:00',
+          end_time: '20:00',
           is_day_off: false,
           note: null
         });
@@ -182,8 +188,8 @@ function EmployeeSchedules() {
           <p className="page-subtitle">Quản lý lịch làm việc, ca làm, ngày nghỉ</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={createDefaultSchedulesForWeek} disabled={creatingDefault}>
-            {creatingDefault ? 'Đang tạo mặc định...' : 'Tạo lịch mặc định (10:00-22:00)'}
+          <button className="btn btn-secondary" onClick={createDefaultSchedulesForMonth} disabled={creatingDefault}>
+            {creatingDefault ? 'Đang tạo mặc định...' : 'Tạo lịch mặc định (10:00-20:00)'}
           </button>
           <button className="btn btn-primary" onClick={() => openScheduleModal()}>
             <FiPlus /> Xếp lịch
