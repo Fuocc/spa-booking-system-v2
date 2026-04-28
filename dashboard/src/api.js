@@ -95,3 +95,7 @@ export const getRevenueChart = (params = {}) => {
   return request(`/dashboard/revenue-chart${query ? `?${query}` : ''}`);
 };
 export const getTopServices = () => request('/dashboard/top-services');
+ 
+ // Settings
+ export const getSettings = () => request('/settings');
+ export const updateSetting = (data) => request('/settings', { method: 'POST', body: JSON.stringify(data) });

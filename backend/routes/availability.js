@@ -230,13 +230,21 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
 
   if (bookErr) throw bookErr;
 
+  // 4.1) Load buffer time from settings
+  const { data: settingsData } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', 'buffer_time')
+    .single();
+  const bufferTime = settingsData ? parseInt(settingsData.value) : 15;
+
   // 5) Generate slots
   const slots = [];
 
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
     for (let m = 0; m < 60; m += SLOT_STEP_MINUTES) {
       const startMinutes = h * 60 + m;
-      const endMinutes = startMinutes + duration + 15;
+      const endMinutes = startMinutes + duration + bufferTime;
 
       if (endMinutes > CLOSE_HOUR * 60) continue;
 
@@ -251,9 +259,9 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
 
       for (const booking of bookings) {
         const bStart = timeToMinutes(booking.start_time);
-        const bEnd = timeToMinutes(booking.end_time);
+        const bEnd = timeToMinutes(booking.end_time) + bufferTime;
 
-        if (startMinutes < bEnd && bStart < endMinutes) {
+        if (startMinutes < bEnd && bStart < (startMinutes + duration + bufferTime)) {
           if (booking.employee_id) busyEmployees.add(booking.employee_id);
           if (booking.bed_id) busyBeds.add(booking.bed_id);
         }
@@ -266,7 +274,8 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
         if (!s) return false;
         const sStart = timeToMinutes(String(s.start_time).substring(0, 5));
         const sEnd = timeToMinutes(String(s.end_time).substring(0, 5));
-        return startMinutes >= sStart && endMinutes <= sEnd;
+        // Employee must be working for the duration + buffer
+        return startMinutes >= sStart && (startMinutes + duration + bufferTime) <= sEnd;
       });
 
       const availableEmployees = availableWorkingEmployees.length;
@@ -274,9 +283,15 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
 
       const disabled = availableEmployees < guestCount || availableBeds < guestCount;
 
+      // Actual end time (without buffer) for display
+      const actualEndTotal = startMinutes + duration;
+      const actualEndH = Math.floor(actualEndTotal / 60);
+      const actualEndM = actualEndTotal % 60;
+      const actualEndTime = `${String(actualEndH).padStart(2, '0')}:${String(actualEndM).padStart(2, '0')}`;
+
       slots.push({
         start_time: startTime,
-        end_time: endTime,
+        end_time: actualEndTime,
         available: !disabled,
         available_employees: availableEmployees,
         available_beds: availableBeds

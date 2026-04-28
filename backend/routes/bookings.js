@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
       .from('bookings')
       .select(`
         *,
-        customers(name, phone, email),
+        customers(id, name, phone, email),
         services(name, duration_minutes, price),
         employees(name),
         beds(name),
@@ -44,7 +44,7 @@ router.get('/:id', async (req, res) => {
       .from('bookings')
       .select(`
         *,
-        customers(name, phone, email),
+        customers(id, name, phone, email),
         services(name, duration_minutes, price),
         employees(name),
         beds(name),
@@ -67,7 +67,7 @@ router.get('/:id', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { service_id, branch_id, start_time, end_time: clientEndTime, employee_id } = req.body;
+    const { service_id, branch_id, start_time, end_time: clientEndTime, employee_id, notes } = req.body;
 
     // Basic validation
     if (!service_id || !branch_id || !start_time || !employee_id) {
@@ -136,7 +136,8 @@ router.put('/:id', async (req, res) => {
         employee_id,
         start_time,
         end_time,
-        total_price
+        total_price,
+        notes: notes !== undefined ? notes : booking.notes
       })
       .eq('id', req.params.id)
       .select(`
@@ -206,10 +207,11 @@ router.post('/', async (req, res) => {
     }
 
     // 2) Calculate end_time (Use client's end_time if provided)
+    const startMinutes = timeToMinutes(start_time);
+    const endMinutes = startMinutes + duration + 15;
+
     let end_time = clientEndTime;
     if (!end_time) {
-      const startMinutes = timeToMinutes(start_time);
-      const endMinutes = startMinutes + duration + 15;
       const endH = Math.floor(endMinutes / 60);
       const endM = endMinutes % 60;
       end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
@@ -217,21 +219,36 @@ router.post('/', async (req, res) => {
 
     // 3) Find or create customer
     let customer;
-    const { data: existingCustomer } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('phone', customer_phone)
-      .single();
+    if (req.body.customer_id) {
+      const { data: cById } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', req.body.customer_id)
+        .single();
+      if (cById) customer = cById;
+    }
 
-    if (existingCustomer) {
-      customer = existingCustomer;
-      if (customer_name !== existingCustomer.name || (customer_email && customer_email !== existingCustomer.email)) {
+    if (!customer) {
+      const { data: existingCustomer } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('phone', customer_phone)
+        .single();
+
+      if (existingCustomer) {
+        customer = existingCustomer;
+      }
+    }
+
+    if (customer) {
+      // Update customer info if changed
+      if (customer_name !== customer.name || (customer_email && customer_email !== customer.email)) {
         const updateData = { name: customer_name };
         if (customer_email) updateData.email = customer_email;
         const { data: updated } = await supabase
           .from('customers')
           .update(updateData)
-          .eq('id', existingCustomer.id)
+          .eq('id', customer.id)
           .select()
           .single();
         if (updated) customer = updated;
@@ -339,7 +356,16 @@ router.post('/', async (req, res) => {
       }
 
       availableEmployees.sort((a, b) => (employeeBookingCount[a.id] || 0) - (employeeBookingCount[b.id] || 0));
-      const assignedEmployee = availableEmployees[0];
+      
+      let assignedEmployee = availableEmployees[0];
+      
+      // If employee_id is explicitly requested (e.g. from admin click), try to use it for the first guest
+      if (g === 0 && req.body.employee_id) {
+        const requestedEmp = availableEmployees.find(e => e.id === req.body.employee_id);
+        if (requestedEmp) {
+          assignedEmployee = requestedEmp;
+        }
+      }
 
       // Beds
       const busyBedIds = new Set();

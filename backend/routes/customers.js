@@ -76,6 +76,21 @@ router.put('/:id', async (req, res) => {
 // DELETE customer
 router.delete('/:id', async (req, res) => {
   try {
+    // 1. Check if customer has bookings
+    const { count, error: countErr } = await supabase
+      .from('bookings')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', req.params.id);
+
+    if (countErr) throw countErr;
+
+    if (count > 0) {
+      return res.status(400).json({ 
+        error: 'Không thể xóa khách hàng này vì đã có lịch sử đặt lịch. Vui lòng xóa các lịch hẹn liên quan trước.' 
+      });
+    }
+
+    // 2. Delete customer if no bookings
     const { error } = await supabase
       .from('customers')
       .delete()

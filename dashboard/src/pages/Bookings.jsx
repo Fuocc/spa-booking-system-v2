@@ -1,11 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { FiPlus, FiChevronLeft, FiChevronRight, FiCalendar, FiList } from 'react-icons/fi';
+import { FiPlus, FiChevronLeft, FiChevronRight, FiCalendar, FiList, FiMoreVertical } from 'react-icons/fi';
 import { HiOutlineChevronLeft, HiOutlineChevronRight } from "react-icons/hi";
-import { toast } from 'react-toastify'
+import { toast } from 'react-toastify';
+import TimePickerInput from '../components/TimePickerInput';
 
 import {
-  getBookingsRange, getBookings, createBooking, updateBooking, updateBookingStatus, deleteBooking,
-  getBranches, getServices, getAvailability, getEmployees, getCustomers, getEmployeeSchedules
+  getBookingsRange, createBooking, updateBooking, deleteBooking,
+  getBranches, getServices, getEmployees, getCustomers, updateCustomer, getEmployeeSchedules
 } from '../api';
 
 import userIcon from '../assets/user-icon.svg';
@@ -14,7 +15,8 @@ import clockIcon from '../assets/clock-icon.svg';
 import noteIcon from '../assets/note-icon.svg';
 
 import { DatePicker, parseDate } from "@chakra-ui/react"
-import '../timepicker.css';
+// import '../styles/timepicker.css';
+import '../styles/bookings.css';
 // ---- Helpers ----
 const OPEN_HOUR = 10;
 const CLOSE_HOUR = 22;
@@ -39,12 +41,29 @@ function toDateStr(d) {
 
 function timeToMinutes(t) {
   if (!t) return 0;
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
+  // Handle AM/PM if present
+  let timeStr = t.toLowerCase();
+  let isPM = timeStr.includes('pm');
+  let isAM = timeStr.includes('am');
+
+  // Clean string to get HH:mm
+  let cleanTime = timeStr.replace(/am|pm/g, '').trim();
+  let [h, m] = cleanTime.split(':').map(Number);
+
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+
+  return (h || 0) * 60 + (m || 0);
 }
 
 const DAY_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-const DAY_NAMES_FULL = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+
+const timeToPixels = (t) => {
+  if (!t) return 0;
+  const startMins = OPEN_HOUR * 60;
+  const currentMins = timeToMinutes(t);
+  return ((currentMins - startMins) / 60) * 100;
+};
 
 const STATUS_COLORS = {
   confirmed: { bg: '#e6f4ec', border: '#0d8a3f', text: '#0d8a3f' },
@@ -54,14 +73,7 @@ const STATUS_COLORS = {
 
 const formatPrice = (v) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v || 0);
 const formatTime = (t) => t ? t.substring(0, 5) : '-';
-
-const formatTime12h = (timeStr) => {
-  if (!timeStr || timeStr === '00:00') return '00:00';
-  const [h, m] = timeStr.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h % 12 || 12;
-  return `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
-};
+const normalize = (str) => (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 const normalizeName = (name) => {
   if (!name) return '';
@@ -74,62 +86,6 @@ const normalizeName = (name) => {
   return cleaned.split(/\s+/)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
-};
-
-const TimePicker = ({ value, onChange, bookingDate }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const options = Array.from({ length: 49 }, (_, i) => {
-    const total = 10 * 60 + i * 15;
-    const t = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-    const [h, m] = t.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 || 12;
-
-    const isToday = bookingDate === toDateStr(new Date());
-    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-    const isPast = isToday && total <= nowMin;
-
-    return { val: t, h12: String(h12).padStart(2, '0'), m: String(m).padStart(2, '0'), ampm, disabled: isPast };
-  });
-
-  const currentOpt = options.find(o => o.val === value) || { h12: '--', m: '--' };
-
-  return (
-    <div className="custom-time-picker-container" ref={containerRef}>
-      <div className="custom-time-picker-trigger" onClick={() => setIsOpen(!isOpen)}>
-        {currentOpt.h12}:{currentOpt.m} {currentOpt.ampm}
-      </div>
-      {isOpen && (
-        <div className="custom-time-picker-dropdown">
-          {options.map(opt => (
-            <div
-              key={opt.val}
-              className={`time-option-item ${opt.val === value ? 'selected' : ''} ${opt.disabled ? 'disabled' : ''}`}
-              onClick={() => {
-                onChange(opt.val);
-                setIsOpen(false);
-              }}
-            >
-              <div className="time-option-val">{opt.h12}:{opt.m}</div>
-              <div className="time-option-suffix">{opt.ampm}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 };
 
 function Bookings({ data }) {
@@ -167,7 +123,15 @@ function Bookings({ data }) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [detailTab, setDetailTab] = useState('schedule'); // 'schedule' or 'customer'
   const [employeeSchedules, setEmployeeSchedules] = useState([]);
+  const [showDetailMore, setShowDetailMore] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
+  // Drag-to-create state
+  const [dragInfo, setDragInfo] = useState(null); // { startY, currentY, staffId, staffName, columnEl }
+  const [hoverInfo, setHoverInfo] = useState(null); // { staffId, y, colLeft, colWidth }
+  const calendarRef = useRef(null);
+  const moreMenuRef = useRef(null);
   const searchTimeoutRef = useRef(null);
+  const gridRef = useRef(null);
 
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
 
@@ -212,6 +176,60 @@ function Bookings({ data }) {
     const timer = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // --- Drag-to-create: global mousemove/mouseup ---
+  useEffect(() => {
+    if (!dragInfo) return;
+
+    const handleMouseMove = (e) => {
+      const colRect = dragInfo.columnEl.getBoundingClientRect();
+      const rawY = e.clientY - colRect.top;
+      const snappedY = Math.max(dragInfo.startY, Math.ceil(rawY / 25) * 25);
+      setDragInfo(prev => prev ? { ...prev, currentY: snappedY } : null);
+    };
+
+    const handleMouseUp = () => {
+      if (!dragInfo) return;
+      const startTime = convertYToTime(dragInfo.startY);
+      const endY = Math.max(dragInfo.startY + 25, dragInfo.currentY);
+      const endTime = convertYToTime(endY);
+
+      // Open modal with pre-populated times and staff
+      const emp = employees.find(e => e.id === dragInfo.staffId);
+      openBookingModal(toDateStr(currentDate), emp, startTime, endTime);
+      setDragInfo(null);
+      setHoverInfo(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragInfo, employees, currentDate]);
+
+  useEffect(() => {
+    if (!showCalendar) return;
+    const handleOutside = (e) => {
+      if (calendarRef.current && !calendarRef.current.contains(e.target)) {
+        setShowCalendar(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showCalendar]);
+
+  useEffect(() => {
+    if (!showDetailMore) return;
+    const handleOutside = (e) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
+        setShowDetailMore(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showDetailMore]);
 
   const loadInitialData = async () => {
     try {
@@ -272,47 +290,114 @@ function Bookings({ data }) {
     }
   };
 
+  // --- Drag-to-create helpers ---
+  const ROW_HEIGHT = 25; // pixels per 15-min slot
+  const SNAP_MINUTES = 15;
+
+  const convertYToTime = (y) => {
+    const totalMins = (y / ROW_HEIGHT) * SNAP_MINUTES;
+    const hours = Math.floor(totalMins / 60) + OPEN_HOUR;
+    const mins = Math.floor(totalMins % 60);
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  };
+
+  const handleDragStart = (e, emp) => {
+    // Don't start drag if clicking on a booking card
+    if (e.target.closest('.cal-booking-card')) return;
+    e.preventDefault();
+    const col = e.currentTarget;
+    const rect = col.getBoundingClientRect();
+    const rawY = e.clientY - rect.top;
+    const snappedY = Math.floor(rawY / ROW_HEIGHT) * ROW_HEIGHT;
+
+    setDragInfo({
+      startY: snappedY,
+      currentY: snappedY + ROW_HEIGHT,
+      staffId: emp.id,
+      staffName: emp.name,
+      columnEl: col
+    });
+  };
+
+  const handleColumnHover = (e, emp) => {
+    if (dragInfo) return; // Don't show ghost while dragging
+    const rect = e.currentTarget.getBoundingClientRect();
+    const gridRect = gridRef.current?.getBoundingClientRect();
+    if (!gridRect) return;
+    const rawY = e.clientY - rect.top;
+    const snappedY = Math.floor(rawY / ROW_HEIGHT) * ROW_HEIGHT;
+
+    setHoverInfo({
+      staffId: emp.id,
+      y: snappedY,
+      colLeft: rect.left - gridRect.left,
+      colWidth: rect.width,
+      time: convertYToTime(snappedY)
+    });
+  };
+
   // ---- Booking Modal Logic ----
-  const openBookingModal = (preDate, preEmployee) => {
+  const openBookingModal = (preDate, preEmployee, preStartTime, preEndTime) => {
     setBookForm({
       branch_id: filterBranch || (branches[0]?.id || ''),
       service_id: '', num_guests: 1,
+      customer_id: '',
       customer_name: '', customer_phone: '', customer_email: '',
       service_search: '',
       employee_search: preEmployee ? preEmployee.name : '',
       employee_id: preEmployee ? preEmployee.id : '',
       booking_date: preDate || toDateStr(new Date()),
-      start_time: '--:--', end_time: '--:--', notes: ''
+      start_time: preStartTime || '--:--',
+      end_time: preEndTime || '--:--',
+      notes: ''
     });
     setBookStep(1);
     setCustomerView('default');
     setAvailSlots([]);
+    setAvailSlots([]);
     setSelectedService(null);
+    setIsDuplicating(false);
     setModalOpen(true);
   };
 
-  const loadAvailability = async () => {
-    if (!bookForm.branch_id || !bookForm.service_id || !bookForm.booking_date) return;
-    setSlotsLoading(true);
-    try {
-      const data = await getAvailability({
-        branch_id: bookForm.branch_id,
-        service_id: bookForm.service_id,
-        date: bookForm.booking_date,
-        num_guests: bookForm.num_guests
-      });
-      setAvailSlots(data.slots || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSlotsLoading(false);
-    }
+  const handleDuplicate = () => {
+    if (!detailModal || !detailEdit) return;
+
+    // Copy data from detailEdit
+    const service = services.find(s => s.id === detailEdit.service_id);
+    const employee = employees.find(e => e.id === detailEdit.employee_id);
+
+    setBookForm({
+      branch_id: detailEdit.branch_id,
+      service_id: detailEdit.service_id,
+      num_guests: 1,
+      customer_id: detailEdit.customer_id,
+      customer_name: detailEdit.customer_name,
+      customer_phone: detailEdit.customer_phone,
+      customer_email: detailEdit.customer_email,
+      service_search: service?.name || '',
+      employee_search: employee?.name || '',
+      employee_id: detailEdit.employee_id,
+      booking_date: detailEdit.booking_date,
+      start_time: detailEdit.start_time,
+      end_time: detailEdit.end_time,
+      notes: detailEdit.notes || ''
+    });
+
+    setCustomerView('selected');
+
+    setSelectedService(service);
+    setIsDuplicating(true);
+    setDetailModal(null);
+    setModalOpen(true);
+    setShowDetailMore(false);
   };
+
 
   const calculateEndTime = (startTime, duration) => {
     if (!startTime || startTime === '--:--' || !duration) return '--:--';
     const [h, m] = startTime.split(':').map(Number);
-    const totalMinutes = h * 60 + m + duration + 15;
+    const totalMinutes = h * 60 + m + duration;
     const endH = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
     const endM = String(totalMinutes % 60).padStart(2, '0');
     return `${endH}:${endM}`;
@@ -337,16 +422,25 @@ function Bookings({ data }) {
     setAvailSlots([]);
   };
 
-  const handleGenericSearch = (type, val) => {
+  const handleGenericSearch = (type, val, isDetail = false) => {
     const fieldMap = {
       customer: 'customer_name',
       service: 'service_search',
       employee: 'employee_search'
     };
     const field = fieldMap[type];
-    setBookForm(prev => ({ ...prev, [field]: val }));
+    const setter = isDetail ? setDetailEdit : setBookForm;
+    const currentState = isDetail ? detailEdit : bookForm;
+
+    setter(prev => ({
+      ...prev,
+      [field]: val,
+      ...(type === 'customer' ? { customer_id: '' } : {})
+    }));
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    const searchVal = normalize(val);
 
     setSearchSuggestions(prev => ({ ...prev, type, loading: true }));
     searchTimeoutRef.current = setTimeout(async () => {
@@ -355,13 +449,62 @@ function Bookings({ data }) {
         if (type === 'customer') {
           results = await getCustomers(val);
         } else if (type === 'service') {
-          results = services.filter(s => s.is_active && (
-            s.name.toLowerCase().includes(val.toLowerCase()) ||
-            (s.description && s.description.toLowerCase().includes(val.toLowerCase()))
-          ));
+          const filtered = services.filter(s => {
+            if (!s.is_active) return false;
+            const nameNorm = normalize(s.name);
+            const descNorm = normalize(s.description);
+
+            // 1. Direct match in name or description
+            if (nameNorm.includes(searchVal) || descNorm.includes(searchVal)) return true;
+
+            // 2. Dynamic shortcode match (first letters of each word)
+            const words = s.name.trim().split(/\s+/).filter(Boolean);
+            const shortcode = words.map(w => normalize(w.charAt(0))).join('');
+            if (shortcode.includes(searchVal)) return true;
+
+            return false;
+          });
+
+          // Dynamic grouping by category from database
+          const categories = [...new Set(services.map(s => s.category).filter(Boolean))];
+
+          const grouped = [];
+          categories.forEach(cat => {
+            const catServices = filtered.filter(s => s.category === cat);
+            if (catServices.length > 0) {
+              grouped.push({ isHeader: true, name: cat });
+              grouped.push(...catServices);
+            }
+          });
+
+          // Others
+          const otherServices = filtered.filter(s => !s.category);
+          if (otherServices.length > 0) {
+            grouped.push({ isHeader: true, name: 'Khác' });
+            grouped.push(...otherServices);
+          }
+          results = grouped;
         } else if (type === 'employee') {
-          const emps = await getEmployees(bookForm.branch_id || undefined);
-          results = emps.filter(e => e.is_active && e.name.toLowerCase().includes(val.toLowerCase()));
+          const emps = await getEmployees(currentState.branch_id || undefined);
+
+          if (currentState.booking_date) {
+            // Filter by schedule
+            const schedules = await getEmployeeSchedules({
+              date_from: currentState.booking_date,
+              date_to: currentState.booking_date
+            });
+            const availableIds = (schedules || [])
+              .filter(s => !s.is_day_off)
+              .map(s => s.employee_id);
+
+            results = emps.filter(e =>
+              e.is_active &&
+              availableIds.includes(e.id) &&
+              normalize(e.name).includes(searchVal)
+            );
+          } else {
+            results = emps.filter(e => e.is_active && normalize(e.name).includes(searchVal));
+          }
         }
         setSearchSuggestions({ type, data: results, loading: false });
       } catch (err) {
@@ -371,30 +514,46 @@ function Bookings({ data }) {
     }, 300);
   };
 
-  const handleSelectSuggestion = (type, item) => {
+  const handleSelectSuggestion = (type, item, isDetail = false) => {
+    const setter = isDetail ? setDetailEdit : setBookForm;
     if (type === 'customer') {
       if (item === 'new') {
-        const query = bookForm.customer_name;
+        const currentState = isDetail ? detailEdit : bookForm;
+        const query = currentState.customer_name;
         const isPhone = /^\d+$/.test(query);
-        setBookForm(prev => ({
+        setter(prev => ({
           ...prev,
+          customer_id: '',
           customer_name: isPhone ? '' : query,
           customer_phone: isPhone ? query : ''
         }));
-        setCustomerView('creating');
+        if (!isDetail) setCustomerView('creating');
       } else {
-        setBookForm(prev => ({
+        setter(prev => ({
           ...prev,
+          customer_id: item.id,
           customer_name: item.name,
           customer_phone: item.phone || '',
           customer_email: item.email || ''
         }));
-        setCustomerView('selected');
+        if (!isDetail) setCustomerView('selected');
       }
     } else if (type === 'service') {
-      handleBookFormServiceChange(item);
+      if (isDetail) {
+        setDetailEdit(f => {
+          const newEndTime = calculateEndTime(f.start_time, item.duration_minutes);
+          return {
+            ...f,
+            service_id: item.id,
+            service_search: item.name,
+            end_time: newEndTime
+          };
+        });
+      } else {
+        handleBookFormServiceChange(item);
+      }
     } else if (type === 'employee') {
-      setBookForm(prev => ({
+      setter(prev => ({
         ...prev,
         employee_id: item.id,
         employee_search: item.name
@@ -408,11 +567,9 @@ function Bookings({ data }) {
 
     // Validation
     const required = {
-      'Dịch vụ': bookForm.service_id,
       'Ngày': bookForm.booking_date,
       'Giờ bắt đầu': bookForm.start_time,
       'Tên khách': bookForm.customer_name,
-      'SĐT khách': bookForm.customer_phone,
       'Chi nhánh': bookForm.branch_id
     };
 
@@ -423,8 +580,27 @@ function Bookings({ data }) {
     }
 
     try {
+      let finalServiceId = bookForm.service_id;
+      let finalEndTime = bookForm.end_time;
+
+      if (!finalServiceId) {
+        const placeholder = services.find(s => normalize(s.name).includes('giu cho'));
+        if (placeholder) {
+          finalServiceId = placeholder.id;
+          // If end_time is not set properly, calculate it based on placeholder duration
+          if (!finalEndTime || finalEndTime === '--:--' || finalEndTime === bookForm.start_time) {
+            finalEndTime = calculateEndTime(bookForm.start_time, placeholder.duration_minutes || 0);
+          }
+        } else {
+          alert('Vui lòng chọn dịch vụ hoặc tạo dịch vụ "Giữ chỗ" để tiếp tục.');
+          return;
+        }
+      }
+
       const finalForm = {
         ...bookForm,
+        service_id: finalServiceId,
+        end_time: finalEndTime,
         customer_name: normalizeName(bookForm.customer_name)
       };
       await createBooking(finalForm);
@@ -446,13 +622,31 @@ function Bookings({ data }) {
 
     setDetailSaving(true);
     try {
+      // 1. Update Booking
       const updated = await updateBooking(detailModal.id, {
         service_id: detailEdit.service_id,
         branch_id: detailEdit.branch_id,
         start_time: detailEdit.start_time,
+        booking_date: detailEdit.booking_date,
         end_time: detailEdit.end_time,
-        employee_id: detailEdit.employee_id
+        employee_id: detailEdit.employee_id,
+        notes: detailEdit.notes
       });
+
+      // 2. Update Customer Info if changed
+      const cust = detailModal.customers;
+      if (cust && (
+        detailEdit.customer_name !== cust.name ||
+        detailEdit.customer_phone !== (cust.phone || '') ||
+        detailEdit.customer_email !== (cust.email || '')
+      )) {
+        await updateCustomer(detailModal.customer_id, {
+          name: detailEdit.customer_name,
+          phone: detailEdit.customer_phone,
+          email: detailEdit.customer_email
+        });
+        updated.customers = { ...updated.customers, name: detailEdit.customer_name, phone: detailEdit.customer_phone, email: detailEdit.customer_email };
+      }
 
       // update list in UI immediately
       setBookings(prev => prev.map(b => (b.id === updated.id ? updated : b)));
@@ -473,22 +667,91 @@ function Bookings({ data }) {
   const handleOpenDetail = async (booking) => {
     setDetailModal(booking);
 
-    // init edit state
     setDetailEdit({
       service_id: booking.service_id || booking.services?.id || '',
+      service_search: booking.services?.name || '',
       branch_id: booking.branch_id || booking.branches?.id || '',
+      booking_date: booking.booking_date || '',
       start_time: (booking.start_time || '').substring(0, 5),
       end_time: (booking.end_time || '').substring(0, 5),
-      employee_id: booking.employee_id || booking.employees?.id || ''
+      employee_id: booking.employee_id || booking.employees?.id || '',
+      employee_search: booking.employees?.name || '',
+      notes: booking.notes || '',
+      customer_name: booking.customers?.name || '',
+      customer_id: booking.customers?.id || '',
+      customer_phone: booking.customers?.phone || '',
+      customer_email: booking.customers?.email || ''
     });
 
     setDetailTab('schedule');
+    setShowDetailMore(false);
+    loadEmployeesForDetail(booking.branch_id, booking.booking_date);
+  };
+
+  const loadEmployeesForDetail = async (branchId, date) => {
     try {
-      const emps = await getEmployees(booking.branch_id);
-      setEmployeesByBranch((emps || []).filter(e => e.is_active));
+      const emps = await getEmployees(branchId);
+      const schedules = await getEmployeeSchedules({
+        date_from: date,
+        date_to: date
+      });
+      const availableIds = (schedules || [])
+        .filter(s => !s.is_day_off)
+        .map(s => s.employee_id);
+
+      setEmployeesByBranch((emps || []).filter(e => e.is_active && availableIds.includes(e.id)));
     } catch (e) {
       console.error(e);
       setEmployeesByBranch([]);
+    }
+  };
+
+  const checkStaffAvailability = async (empId, date, start, end) => {
+    if (!empId || !date || !start || !end) return true;
+    try {
+      const resp = await getEmployeeSchedules({
+        employee_id: empId,
+        date_from: date,
+        date_to: date
+      });
+      const sched = (resp || [])[0];
+      if (!sched || sched.is_day_off) return false;
+
+      const startMin = timeToMinutes(start);
+      const endMin = timeToMinutes(end);
+      const sStart = timeToMinutes(String(sched.start_time).substring(0, 5));
+      const sEnd = timeToMinutes(String(sched.end_time).substring(0, 5));
+
+      return startMin >= sStart && endMin <= sEnd;
+    } catch (err) {
+      console.error('Availability check failed:', err);
+      return true;
+    }
+  };
+
+  const handleDateChange = async (newDate) => {
+    setDetailEdit(prev => ({ ...prev, booking_date: newDate }));
+    loadEmployeesForDetail(detailEdit.branch_id, newDate);
+
+    const isAvail = await checkStaffAvailability(detailEdit.employee_id, newDate, detailEdit.start_time, detailEdit.end_time);
+    if (!isAvail) {
+      setDetailEdit(prev => ({ ...prev, employee_id: '' }));
+      toast.warn('Nhân viên không làm việc hoặc không có ca trực vào ngày đã chọn.', { position: 'bottom-right' });
+    }
+  };
+
+  const handleTimeChange = async (type, newVal) => {
+    const updated = { ...detailEdit, [type]: newVal };
+    if (type === 'start_time') {
+      const duration = services.find(s => s.id === detailEdit.service_id)?.duration_minutes || 0;
+      updated.end_time = calculateEndTime(newVal, duration);
+    }
+    setDetailEdit(updated);
+
+    const isAvail = await checkStaffAvailability(updated.employee_id, updated.booking_date, updated.start_time, updated.end_time);
+    if (!isAvail) {
+      setDetailEdit(prev => ({ ...prev, employee_id: '' }));
+      toast.warn('Nhân viên không làm việc hoặc không có ca trực vào khung giờ mới.', { position: 'bottom-right' });
     }
   };
 
@@ -496,11 +759,14 @@ function Bookings({ data }) {
     if (!detailModal || !detailEdit) return false;
     return (
       detailEdit.service_id !== (detailModal.service_id || detailModal.services?.id) ||
-      detailEdit.branch_id !== (detailModal.branch_id || detailModal.branches?.id) ||
+      detailEdit.booking_date !== detailModal.booking_date ||
       detailEdit.start_time !== (detailModal.start_time || '').substring(0, 5) ||
       detailEdit.end_time !== (detailModal.end_time || '').substring(0, 5) ||
       detailEdit.employee_id !== (detailModal.employee_id || detailModal.employees?.id) ||
-      detailEdit.notes !== (detailModal.notes || '')
+      detailEdit.notes !== (detailModal.notes || '') ||
+      detailEdit.customer_name !== (detailModal.customers?.name || '') ||
+      detailEdit.customer_phone !== (detailModal.customers?.phone || '') ||
+      detailEdit.customer_email !== (detailModal.customers?.email || '')
     );
   }, [detailModal, detailEdit]);
 
@@ -556,7 +822,7 @@ function Bookings({ data }) {
   const todayStr = toDateStr(new Date());
 
   return (
-    <div className='full-view' style={{ '--staff-count': employees.length, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+    <div className='full-view full-view-bookings' style={{ '--staff-count': employees.length }}>
       {/* Calendar Toolbar */}
       <div className="cal-toolbar">
         <div className="cal-toolbar-wrap">
@@ -566,7 +832,7 @@ function Bookings({ data }) {
             </span>
             <button className="btn-icon" onClick={goPrev} title="Ngày trước"><FiChevronLeft /></button>
             <button className="btn-icon" onClick={goNext} title="Ngày sau"><FiChevronRight /></button>
-            <button className="btn btn-sm btn-ghost" style={{ fontSize: 15, fontWeight: 500 }} onClick={goToday}>Hôm nay</button>
+            <button className="btn btn-sm btn-ghost fs-15 fw-500" onClick={goToday}>Hôm nay</button>
           </div>
           <div className="cal-toolbar-right">
             <div className="cal-view-toggle">
@@ -577,7 +843,7 @@ function Bookings({ data }) {
                 <FiList size={14} />
               </button>
             </div>
-            <select className="form-select" style={{ maxWidth: 200 }}
+            <select className="form-select max-w-200"
               value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
@@ -596,8 +862,7 @@ function Bookings({ data }) {
               return (
                 <div
                   key={emp.id}
-                  className="cal-staff-header"
-                  style={{ backgroundColor: isAvailable ? '#FFFFFF' : '#FAFAFA' }}
+                  className={`cal-staff-header ${isAvailable ? 'available' : 'unavailable'}`}
                 >
                   {emp.name}
                 </div>
@@ -611,7 +876,7 @@ function Bookings({ data }) {
       {viewMode === 'calendar' ? (
         <div className="cal-container">
 
-          <div className='calendar-grid'>
+          <div className='calendar-grid' ref={gridRef}>
             {/* Time labels column */}
             <div className="cal-time-column">
               {HOURS.map(hour => (
@@ -621,6 +886,21 @@ function Bookings({ data }) {
               ))}
             </div>
 
+            {/* Hover ghost (rendered in grid layer) */}
+            {hoverInfo && !dragInfo && (
+              <div
+                className="cal-hover-ghost"
+                style={{
+                  top: `${hoverInfo.y}px`,
+                  left: `${hoverInfo.colLeft + 4}px`,
+                  width: `${hoverInfo.colWidth - 8}px`,
+                  height: `${ROW_HEIGHT}px`
+                }}
+              >
+                {hoverInfo.time}
+              </div>
+            )}
+
             {/* Staff columns */}
             {employees.map(emp => {
               const empSched = employeeSchedules.find(s => s.employee_id === emp.id);
@@ -629,12 +909,16 @@ function Bookings({ data }) {
               return (
                 <div
                   key={emp.id}
-                  className="cal-staff-column"
+                  className={`cal-staff-column ${isAvailable ? 'available' : 'unavailable'}`}
+                  data-staff-id={emp.id}
+                  data-staff-name={emp.name}
                   style={{
-                    backgroundColor: isAvailable ? 'transparent' : '#FAFAFA',
-                    cursor: isAvailable ? 'pointer' : 'default'
+                    '--shift-start': isAvailable ? `${timeToPixels(String(empSched.start_time).substring(0, 5))}px` : '0px',
+                    '--shift-end': isAvailable ? `${timeToPixels(String(empSched.end_time).substring(0, 5))}px` : '0px'
                   }}
-                  onClick={() => isAvailable && openBookingModal(toDateStr(currentDate), emp)}
+                  onMouseDown={(e) => handleDragStart(e, emp)}
+                  onMouseMove={(e) => handleColumnHover(e, emp)}
+                  onMouseLeave={() => { if (!dragInfo) setHoverInfo(null); }}
                 >
                   {/* Now Line (rendered in each column or once for the whole grid) */}
                   {toDateStr(currentDate) === toDateStr(now) && (
@@ -667,12 +951,29 @@ function Bookings({ data }) {
                         }}
                         onClick={(e) => { e.stopPropagation(); handleOpenDetail(b); }}
                       >
-                        <div className="cal-booking-time">{formatTime(b.start_time)}</div>
-                        <div className="cal-booking-name">{b.customers?.name}</div>
+                        <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
+                        <div className="cal-booking-name">{b.customers?.name} - {b.customers?.id}</div>
                         <div className="cal-booking-service">{b.services?.name} - {b.services?.duration_minutes}p</div>
+                        <div className="cal-booking-service">{b.notes ? `Ghi chú: ${b.notes}` : null}</div>
                       </div>
                     );
                   })}
+
+                  {/* Drag selection overlay */}
+                  {dragInfo && dragInfo.staffId === emp.id && (() => {
+                    const top = dragInfo.startY;
+                    const height = Math.max(ROW_HEIGHT, dragInfo.currentY - dragInfo.startY);
+                    const startT = convertYToTime(top);
+                    const endT = convertYToTime(top + height);
+                    return (
+                      <div
+                        className="cal-drag-selection"
+                        style={{ top: `${top}px`, height: `${height}px` }}
+                      >
+                        <span className="cal-drag-time">{startT} – {endT}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -711,10 +1012,10 @@ function Bookings({ data }) {
                   bookings
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map(b => (
-                      <tr key={b.id} onClick={() => handleOpenDetail(b)} style={{ cursor: 'pointer' }}>
+                      <tr key={b.id} onClick={() => handleOpenDetail(b)} className="cursor-pointer">
                         <td>
-                          <div style={{ fontWeight: 600 }}>{b.customers?.name || '-'}</div>
-                          <div style={{ fontSize: 12, color: '#afafaf' }}>{b.customers?.phone}</div>
+                          <div className="fw-600">{b.customers?.name || '-'}</div>
+                          <div className="fs-12 text-muted">{b.customers?.phone}</div>
                         </td>
                         <td>{b.services?.name || '-'}</td>
                         <td>{b.branches?.name || '-'}</td>
@@ -725,7 +1026,7 @@ function Bookings({ data }) {
                         <td>
                           <span className={`badge badge-${b.status}`}>{b.status}</span>
                         </td>
-                        <td style={{ fontWeight: 600 }}>{formatPrice(b.total_price)}</td>
+                        <td className="fw-600">{formatPrice(b.total_price)}</td>
                       </tr>
                     ))
                 )}
@@ -765,9 +1066,9 @@ function Bookings({ data }) {
       {/* Booking Detail Modal */}
       {detailModal && (
         <div className="modal-overlay" onClick={() => setDetailModal(null)}>
-          <div className="modal modal-viewing" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ paddingBottom: 0 }}>
-              <h3 style={{ fontSize: '24px', fontWeight: 700 }}>Chi tiết</h3>
+          <div className="modal modal-viewing max-w-480" onClick={e => e.stopPropagation()}>
+            <div className="modal-header pb-0">
+              <h3 className="fs-24 fw-700">Chi tiết</h3>
               <button className="modal-close" onClick={() => setDetailModal(null)}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M19 5L5 19" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
@@ -778,74 +1079,90 @@ function Bookings({ data }) {
 
             <div className="detail-tabs">
               <button
-                className={`tab-btn ${detailTab === 'schedule' ? 'active' : ''}`}
+                className={`detail-tab-btn tab-btn ${detailTab === 'schedule' ? 'active' : ''}`}
                 onClick={() => setDetailTab('schedule')}
-                style={{
-                  color: detailTab === 'schedule' ? '#000' : '#888',
-                  borderBottom: detailTab === 'schedule' ? '2px solid #000' : 'none'
-                }}
               >
                 Lịch
               </button>
               <button
-                className={`tab-btn ${detailTab === 'customer' ? 'active' : ''}`}
+                className={`detail-tab-btn tab-btn ${detailTab === 'customer' ? 'active' : ''}`}
                 onClick={() => setDetailTab('customer')}
-                style={{ color: detailTab === 'customer' ? '#000' : '#888', borderBottom: detailTab === 'customer' ? '2px solid #000' : 'none' }}
               >
                 Khách
               </button>
             </div>
 
-            <div className="modal-body" style={{ paddingTop: 0 }}>
+            <div className="modal-body pt-0">
               {detailTab === 'schedule' ? (
                 <div className="detail-view">
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#0d8a3f' }}></div>
+                      <div className="service-icon-dot sm" style={{ background: services.find(s => s.id === detailEdit.service_id)?.color || '#0d8a3f' }}></div>
                     </div>
                     <div className="booking-row-content">
-                      <select
-                        className="form-select"
-                        style={{ border: 'none', padding: 0, fontSize: '16px', fontWeight: 500 }}
-                        value={detailEdit.service_id}
-                        onChange={e => {
-                          const newServiceId = e.target.value;
-                          const newDuration = services.find(s => s.id === newServiceId)?.duration_minutes || 0;
-                          setDetailEdit(f => ({
-                            ...f,
-                            service_id: newServiceId,
-                            end_time: calculateEndTime(f.start_time, newDuration)
-                          }));
-                        }}
-                      >
-                        {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
+                      <div className="pos-relative">
+                        <input
+                          type="text"
+                          className={`form-input border-0 fs-16 fw-500 ${!detailEdit.service_id && detailEdit.service_search ? 'error' : ''}`}
+                          value={detailEdit.service_search}
+                          onChange={e => {
+                            handleGenericSearch('service', e.target.value, true);
+                            if (detailEdit.service_id) setDetailEdit(prev => ({ ...prev, service_id: '' }));
+                          }}
+                          onFocus={() => handleGenericSearch('service', detailEdit.service_search, true)}
+                          onBlur={() => setTimeout(() => setSearchSuggestions({ type: null, data: [], loading: false }), 200)}
+                          placeholder="Chọn Dịch Vụ"
+                          autoComplete="off"
+                        />
+                        {searchSuggestions.type === 'service' && searchSuggestions.loading && (
+                          <div className="spinner-icon spinner-icon-right" />
+                        )}
+                        {searchSuggestions.type === 'service' && searchSuggestions.data.length > 0 && (
+                          <div className="autocomplete-dropdown">
+                            {searchSuggestions.data.map((s, idx) => {
+                              if (s.isHeader) {
+                                return (
+                                  <div key={`header-${idx}`} className="autocomplete-header">
+                                    {s.name}
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div key={s.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('service', s, true)}>
+                                  <div className="service-icon-dot sm" style={{ background: s.color || '#F8F3EC' }}></div>
+                                  <div className="customer-info">
+                                    <div className="autocomplete-name">{s.name}</div>
+                                    <div className="customer-phone">{formatPrice(s.price)}</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <img src={clockIcon} alt="time" style={{ width: 20 }} />
+                      <img src={clockIcon} alt="time" className="w-20" />
                     </div>
-                    <div className="booking-row-content" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 500 }}>
-                        {new Date(detailModal.booking_date).getDate()}, Tháng {new Date(detailModal.booking_date).getMonth() + 1}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <TimePicker
+                    <div className="booking-row-content d-flex justify-content-between align-items-center">
+                      <input
+                        type="date"
+                        className="form-input pl-16 border-0 fs-16 fw-500 p-0 cursor-pointer w-140"
+                        value={detailEdit.booking_date}
+                        onChange={e => handleDateChange(e.target.value)}
+                      />
+                      <div className="d-flex align-items-center">
+                        <TimePickerInput
                           value={detailEdit.start_time}
-                          onChange={val => setDetailEdit(f => ({
-                            ...f,
-                            start_time: val,
-                            end_time: calculateEndTime(val, services.find(s => s.id === f.service_id)?.duration_minutes || 0)
-                          }))}
-                          bookingDate={detailModal.booking_date}
+                          onChange={val => handleTimeChange('start_time', val)}
                         />
-                        <span style={{ fontSize: '16px', color: '#afafaf' }}>—</span>
-                        <TimePicker
+                        <span className="fs-16 text-gray mx-4">—</span>
+                        <TimePickerInput
                           value={detailEdit.end_time}
-                          onChange={val => setDetailEdit(f => ({ ...f, end_time: val }))}
-                          bookingDate={detailModal.booking_date}
+                          onChange={val => handleTimeChange('end_time', val)}
                         />
                       </div>
                     </div>
@@ -853,24 +1170,29 @@ function Bookings({ data }) {
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <div className="customer-avatar" style={{ transform: 'scale(1.2)' }}>{detailModal.customers?.name?.charAt(0) || 'T'}</div>
+                      <div className="customer-avatar scale-120">{detailModal.customers?.name?.trim().split(' ').at(-1)[0] || 'A'}</div>
                     </div>
-                    <div className="booking-row-content" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 500 }}>{detailModal.customers?.name}</div>
-                      <div style={{ fontSize: '15px', color: '#888' }}>{detailModal.customers?.phone}</div>
+                    <div className="booking-row-content">
+                      <div className="customer-info">
+                        <div className="fs-16 fw-500">{detailModal.customers?.name}</div>
+                        <div className="fs-15 text-gray">{detailModal.customers?.phone}</div>
+                      </div>
                     </div>
                   </div>
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <img src={shopIcon} alt="branch" style={{ width: 20 }} />
+                      <img src={shopIcon} alt="branch" className="w-20" />
                     </div>
                     <div className="booking-row-content">
                       <select
-                        className="form-select"
-                        style={{ border: 'none', padding: 0, fontSize: '16px', fontWeight: 500 }}
+                        className="form-select border-0 fs-16 fw-500"
                         value={detailEdit.branch_id}
-                        onChange={e => setDetailEdit(f => ({ ...f, branch_id: e.target.value }))}
+                        onChange={e => {
+                          const newBranchId = e.target.value;
+                          setDetailEdit(f => ({ ...f, branch_id: newBranchId }));
+                          loadEmployeesForDetail(newBranchId, detailEdit.booking_date);
+                        }}
                       >
                         {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
@@ -879,29 +1201,50 @@ function Bookings({ data }) {
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <div className="customer-avatar" style={{ transform: 'scale(1.2)', background: '#eee', color: '#999' }}>{detailModal.employees?.name?.charAt(0) || 'A'}</div>
+                      <div className="customer-avatar scale-120 bg-gray text-muted">{detailModal.employees?.name?.trim().split(' ').at(-1)[0] || 'A'}</div>
                     </div>
                     <div className="booking-row-content">
-                      <select
-                        className="form-select"
-                        style={{ border: 'none', padding: 0, fontSize: '16px', fontWeight: 500 }}
-                        value={detailEdit.employee_id}
-                        onChange={e => setDetailEdit(f => ({ ...f, employee_id: e.target.value }))}
-                      >
-                        {employeesByBranch.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                      </select>
+                      <div className="pos-relative">
+                        <input
+                          type="text"
+                          className="form-input border-0 fs-16 fw-500"
+                          value={detailEdit.employee_search}
+                          onChange={e => {
+                            handleGenericSearch('employee', e.target.value, true);
+                            if (detailEdit.employee_id) setDetailEdit(prev => ({ ...prev, employee_id: '' }));
+                          }}
+                          onFocus={() => handleGenericSearch('employee', detailEdit.employee_search, true)}
+                          onBlur={() => setTimeout(() => setSearchSuggestions({ type: null, data: [], loading: false }), 200)}
+                          placeholder="Nhân Viên"
+                          autoComplete="off"
+                        />
+                        {searchSuggestions.type === 'employee' && searchSuggestions.loading && (
+                          <div className="spinner-icon spinner-icon-right" />
+                        )}
+                        {searchSuggestions.type === 'employee' && searchSuggestions.data.length > 0 && (
+                          <div className="autocomplete-dropdown">
+                            {searchSuggestions.data.map(emp => (
+                              <div key={emp.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('employee', emp, true)}>
+                                <div className="customer-avatar">{emp.name.trim().split(' ').at(-1)[0]}</div>
+                                <div className="customer-info">
+                                  <div className="autocomplete-name">{emp.name}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <img src={noteIcon} alt="note" style={{ width: 20 }} />
+                      <img src={noteIcon} alt="note" className="w-20" />
                     </div>
                     <div className="booking-row-content">
                       <input
                         type="text"
-                        className="form-input"
-                        style={{ border: 'none', padding: 0, fontSize: '16px', fontWeight: 500 }}
+                        className="form-input border-0 fs-16 fw-500"
                         value={detailEdit.notes}
                         onChange={e => setDetailEdit(f => ({ ...f, notes: e.target.value }))}
                         placeholder="Thêm ghi chú"
@@ -911,11 +1254,12 @@ function Bookings({ data }) {
                 </div>
               ) : (
                 <div className="customer-view">
-                  <div style={{ textAlign: 'center', margin: '16px 0 32px' }}>
-                    <div className="customer-avatar" style={{ width: 80, height: 80, fontSize: '32px', margin: '0 auto 16px' }}>
-                      {detailModal.customers?.name?.charAt(4) || 'A'}
+                  <div className="text-center my-14">
+                    <p className='customer-id'>Mã KH: {detailModal.customers?.id}</p>
+                    <div className="customer-avatar w-80 h-80 fs-32 mx-auto mb-16">
+                      {detailEdit.customer_name?.trim().split(' ').at(-1)[0].toUpperCase() || 'A'}
                     </div>
-                    <h2 style={{ fontSize: '24px', fontWeight: 700 }}>{detailModal.customers?.name}</h2>
+                    <h2 className="fs-24 fw-700">{detailModal.customers?.name}</h2>
                   </div>
 
                   <div className="booking-row no-hover">
@@ -923,7 +1267,12 @@ function Bookings({ data }) {
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     </div>
                     <div className="booking-row-content">
-                      <div style={{ fontSize: '16px', fontWeight: 500 }}>{detailModal.customers?.name}</div>
+                      <input
+                        className="form-input border-0 fs-16 fw-500"
+                        value={detailEdit.customer_name}
+                        onChange={e => setDetailEdit(f => ({ ...f, customer_name: e.target.value }))}
+                        placeholder="Tên khách"
+                      />
                     </div>
                   </div>
 
@@ -932,7 +1281,12 @@ function Bookings({ data }) {
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
                     </div>
                     <div className="booking-row-content">
-                      <div style={{ fontSize: '16px', fontWeight: 500 }}>{detailModal.customers?.phone}</div>
+                      <input
+                        className="form-input border-0 fs-16 fw-500"
+                        value={detailEdit.customer_phone}
+                        onChange={e => setDetailEdit(f => ({ ...f, customer_phone: e.target.value }))}
+                        placeholder="Số điện thoại"
+                      />
                     </div>
                   </div>
 
@@ -941,35 +1295,52 @@ function Bookings({ data }) {
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
                     </div>
                     <div className="booking-row-content">
-                      <div style={{ fontSize: '16px', color: '#888' }}>{detailModal.email || "Không có email"}</div>
+                      <input
+                        className="form-input border-0 fs-16 text-gray"
+                        value={detailEdit.customer_email}
+                        onChange={e => setDetailEdit(f => ({ ...f, customer_email: e.target.value }))}
+                        placeholder="Email"
+                      />
                     </div>
                   </div>
 
-                  <div className="booking-row no-hover">
+                  <div className="booking-row no-hover align-items-start">
                     <div className="booking-row-icon">
-                      <img src={noteIcon} alt="note" style={{ width: 24 }} />
+                      <img src={noteIcon} alt="note" className="w-24 mt-32" />
                     </div>
                     <div className="booking-row-content">
-                      <div style={{ fontSize: '16px', fontWeight: 500 }}>{detailModal.notes || "Không có ghi chú"}</div>
+                      <textarea
+                        className="form-textarea border-0 fs-16 fw-500 h-60"
+                        value={detailEdit.notes}
+                        onChange={e => setDetailEdit(f => ({ ...f, notes: e.target.value }))}
+                        placeholder="Ghi chú..."
+                      />
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="modal-footer modal-viewing">
+            <div className="modal-footer">
+              <div className="pos-relative" ref={moreMenuRef}>
+                <button className="btn-icon btn-more" onClick={() => setShowDetailMore(!showDetailMore)}>
+                  <FiMoreVertical />
+                </button>
+                {showDetailMore && (
+                  <div className="more-menu">
+                    <button className="more-menu-item" onClick={handleDuplicate}>
+                      Nhân bản
+                    </button>
+                    <button className="more-menu-item text-danger" onClick={() => handleCancel(detailModal.id)}>
+                      Hủy lịch
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
-                className="btn-trash"
-                onClick={() => handleCancel(detailModal.id)}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                Hủy
-              </button>
-              <button
-                className="btn btn-primary"
+                className="btn btn-primary btn-save-detail"
                 onClick={handleSaveDetail}
                 disabled={detailSaving || !isDetailModified}
-                style={{ borderRadius: '40px', padding: '12px 32px', fontSize: '16px', fontWeight: 600, background: isDetailModified ? '#000' : '#dcdcdc', color: '#fff', border: 'none' }}
               >
                 {detailSaving ? 'Đang lưu...' : 'Lưu'}
               </button>
@@ -983,9 +1354,9 @@ function Bookings({ data }) {
       {
         modalOpen && (
           <div className="modal-overlay" onClick={() => setModalOpen(false)}>
-            <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+            <div className="modal modal-max-480" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <h3>Đặt lịch</h3>
+                <h3>Lịch mới</h3>
                 <button className="modal-close" onClick={() => setModalOpen(false)}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M19 5L5 19" stroke="black" stroke-miterlimit="10"></path>
@@ -998,19 +1369,13 @@ function Bookings({ data }) {
                   {/* 1 Row: Dịch vụ */}
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <FiCalendar style={{ color: selectedService ? '#333' : '#afafaf' }} />
+                      <div className="service-icon-dot sm" style={{ background: selectedService?.color || '#F8F3EC' }}></div>
                     </div>
                     <div className="booking-row-content">
-                      <div style={{ position: 'relative' }}>
+                      <div className="pos-relative">
                         <input
                           type="text"
-                          className="form-input"
-                          style={{
-                            border: !bookForm.service_id && bookForm.service_search ? '1px solid #ff4d4f' : 'none',
-                            fontSize: '16px',
-                            fontWeight: 500,
-                            boxShadow: 'none'
-                          }}
+                          className={`form-input form-input-service ${!bookForm.service_id && bookForm.service_search ? 'error' : ''}`}
                           value={bookForm.service_search}
                           onChange={e => {
                             handleGenericSearch('service', e.target.value);
@@ -1022,19 +1387,28 @@ function Bookings({ data }) {
                           autoComplete="off"
                         />
                         {searchSuggestions.type === 'service' && searchSuggestions.loading && (
-                          <div className="spinner-icon" style={{ position: 'absolute', right: 0, top: '50%', marginTop: '-9px' }} />
+                          <div className="spinner-icon spinner-icon-right" />
                         )}
                         {searchSuggestions.type === 'service' && searchSuggestions.data.length > 0 && (
                           <div className="autocomplete-dropdown">
-                            {searchSuggestions.data.map(s => (
-                              <div key={s.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('service', s)}>
-                                <div className="customer-avatar" style={{ background: '#eee', color: '#666' }}>{s.name.charAt(0)}</div>
-                                <div className="customer-info">
-                                  <div className="autocomplete-name">{s.name}</div>
-                                  <div className="customer-phone">{formatPrice(s.price)}</div>
+                            {searchSuggestions.data.map((s, idx) => {
+                              if (s.isHeader) {
+                                return (
+                                  <div key={`header-${idx}`} className="autocomplete-header">
+                                    {s.name}
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div key={s.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('service', s)}>
+                                  <div className="service-icon-dot sm" style={{ background: s.color || '#F8F3EC' }}></div>
+                                  <div className="customer-info">
+                                    <div className="autocomplete-name">{s.name}</div>
+                                    <div className="customer-phone">{formatPrice(s.price)}</div>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -1046,18 +1420,20 @@ function Bookings({ data }) {
                     <div className="booking-row-icon">
                       <img src={clockIcon} alt="date" />
                     </div>
-                    <div className="booking-row-content" style={{ display: 'flex', gap: 16 }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
+                    <div className="booking-row-content new-customer-fields">
+                      <div className="booking-date-container">
                         <input
                           type="text"
-                          className="form-input"
+                          className="form-input form-input-readonly"
                           readOnly
-                          style={{ border: 'none', width: '100%', boxShadow: 'none', cursor: 'pointer' }}
                           value={bookForm.booking_date ? new Date(bookForm.booking_date).toLocaleDateString('vi-VN') : '--/--/----'}
                           onClick={() => setShowCalendar(!showCalendar)}
                         />
                         {showCalendar && (
-                          <div style={{ position: 'absolute', top: '105%', left: 0, zIndex: 100, background: 'white', border: '1px solid #efefef', borderRadius: 12, padding: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+                          <div
+                            ref={calendarRef}
+                            className="calendar-popover"
+                          >
                             <DatePicker.Root
                               selectionMode="single"
                               hideOutsideDays
@@ -1068,7 +1444,33 @@ function Bookings({ data }) {
                                 if (details.value[0]) {
                                   const d = details.value[0];
                                   const dateStr = `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
-                                  setBookForm(f => ({ ...f, booking_date: dateStr }));
+
+                                  const selectedDate = new Date(dateStr);
+                                  const today = new Date();
+                                  today.setHours(0, 0, 0, 0);
+
+                                  if (selectedDate < today) {
+                                    alert('Không thể chọn ngày trong quá khứ');
+                                    return;
+                                  }
+
+                                  const newDate = dateStr;
+
+                                  const handleDateUpdate = async () => {
+                                    let shouldClearEmployee = false;
+                                    if (bookForm.employee_id) {
+                                      const avail = await checkStaffAvailability(bookForm.employee_id, newDate, bookForm.start_time, bookForm.end_time);
+                                      if (!avail) shouldClearEmployee = true;
+                                    }
+
+                                    setBookForm(f => ({
+                                      ...f,
+                                      booking_date: newDate,
+                                      ...(shouldClearEmployee ? { employee_id: '', employee_search: '' } : {})
+                                    }));
+                                  };
+
+                                  handleDateUpdate();
                                   setShowCalendar(false);
                                 }
                               }}
@@ -1091,43 +1493,39 @@ function Bookings({ data }) {
                           </div>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <TimePicker
+                      <div className="d-flex align-items-center">
+                        <TimePickerInput
                           value={bookForm.start_time}
                           onChange={val => {
                             setBookForm(f => ({ ...f, start_time: val, end_time: calculateEndTime(val, selectedService?.duration_minutes || 0) }));
                           }}
-                          bookingDate={bookForm.booking_date}
                         />
-                        <span style={{ fontSize: '20px', color: '#afafaf' }}>—</span>
-                        <TimePicker
+                        <span className="time-separator-text">—</span>
+                        <TimePickerInput
                           value={bookForm.end_time}
                           onChange={val => setBookForm(f => ({ ...f, end_time: val }))}
-                          bookingDate={bookForm.booking_date}
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* 1 Row: Khách hàng */}
-                  <div className="booking-row no-hover"
-                    onClick={() => customerView === 'default' && setCustomerView('searching')}>
+                  <div className="booking-row no-hover">
                     <div className="booking-row-icon">
                       {customerView === 'selected' || customerView === 'creating' ? (
-                        <div className="customer-avatar" style={{ transform: 'scale(1.15)' }}>{bookForm.customer_name?.charAt(0).toUpperCase() || 'T'}</div>
+                        <div className="customer-avatar customer-avatar-selected">{bookForm.customer_name?.trim().split(' ').at(-1)[0].toUpperCase() || 'T'}</div>
                       ) : (
                         <img src={userIcon} alt="user" />
                       )}
                     </div>
                     <div className="booking-row-content">
-                      {customerView === 'default' && <div className="booking-row-title" style={{ color: '#888888' }}>Thêm Khách</div>}
+                      {customerView === 'default' && <div className="booking-row-title placeholder-text-dim cursor-pointer" onClick={() => setCustomerView('searching')}>Thêm Khách</div>}
 
                       {customerView === 'searching' && (
-                        <div style={{ position: 'relative' }}>
+                        <div className="pos-relative">
                           <input
                             type="text"
-                            className="form-input"
-                            style={{ border: '1px solid #333', fontSize: '16px', fontWeight: 500, borderRadius: '12px' }}
+                            className="form-input form-input-search"
                             autoFocus
                             value={bookForm.customer_name}
                             onChange={e => handleGenericSearch('customer', e.target.value)}
@@ -1137,17 +1535,17 @@ function Bookings({ data }) {
                                 setCustomerView('default');
                               }
                             }, 200)}
-                            placeholder="Nhập tên khách hàng hoặc số điện thoại..."
+                            placeholder="Tên khách hàng hoặc SĐT..."
                             autoComplete="off"
                           />
                           {searchSuggestions.type === 'customer' && searchSuggestions.loading && (
-                            <div className="spinner-icon" style={{ position: 'absolute', right: 12, top: '50%', marginTop: '-9px' }} />
+                            <div className="spinner-icon spinner-icon-right" />
                           )}
                           {searchSuggestions.type === 'customer' && (
                             <div className="autocomplete-dropdown">
                               {searchSuggestions.data.map(c => (
                                 <div key={c.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('customer', c)}>
-                                  <div className="customer-avatar">{c.name.charAt(0)}</div>
+                                  <div className="customer-avatar">{c.name.trim().split(' ').at(-1)[0]}</div>
                                   <div className="customer-info">
                                     <div className="autocomplete-name">{c.name}</div>
                                     <div className="customer-phone">{c.phone}</div>
@@ -1170,10 +1568,10 @@ function Bookings({ data }) {
                       )}
 
                       {customerView === 'creating' && (
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                          <input className="form-input" style={{ border: 'none', padding: 16, fontWeight: 500, boxShadow: 'none' }} placeholder="Tên khách"
+                        <div className="new-customer-fields">
+                          <input className="form-input form-input-clean" placeholder="Tên khách"
                             value={bookForm.customer_name} onChange={e => setBookForm(f => ({ ...f, customer_name: e.target.value }))} />
-                          <input className="form-input" style={{ border: '1px solid #e0e0e0', padding: '6px 12px', borderRadius: '10px', width: '140px' }} placeholder="Nhập SĐT"
+                          <input className="form-input phone-input-sm" placeholder="Nhập SĐT"
                             value={bookForm.customer_phone} onChange={e => setBookForm(f => ({ ...f, customer_phone: e.target.value }))} />
                         </div>
                       )}
@@ -1186,7 +1584,7 @@ function Bookings({ data }) {
                       <img src={shopIcon} alt="branch" />
                     </div>
                     <div className="booking-row-content">
-                      <select className="form-select" style={{ border: 'none', background: 'none', fontSize: '16px', fontWeight: 500, boxShadow: 'none' }}
+                      <select className="form-select form-select-clean"
                         value={bookForm.branch_id} onChange={e => setBookForm(prev => ({ ...prev, branch_id: e.target.value }))}>
                         {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
@@ -1196,14 +1594,13 @@ function Bookings({ data }) {
                   {/* 1 Row: Nhân viên */}
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <div className="customer-avatar" style={{ transform: 'scale(1.2)', background: '#eee', color: '#999' }}>{bookForm.employee_search?.charAt(0) || 'A'}</div>
+                      <div className="customer-avatar employee-avatar-placeholder">{bookForm.employee_search?.trim().split(' ').at(-1)[0] || 'A'}</div>
                     </div>
                     <div className="booking-row-content">
-                      <div style={{ position: 'relative' }}>
+                      <div className="pos-relative">
                         <input
                           type="text"
-                          className="form-input"
-                          style={{ border: 'none', fontSize: '16px', fontWeight: 500, boxShadow: 'none' }}
+                          className="form-input form-input-clean"
                           value={bookForm.employee_search}
                           onChange={e => handleGenericSearch('employee', e.target.value)}
                           onFocus={e => handleGenericSearch('employee', e.target.value)}
@@ -1212,13 +1609,13 @@ function Bookings({ data }) {
                           autoComplete="off"
                         />
                         {searchSuggestions.type === 'employee' && searchSuggestions.loading && (
-                          <div className="spinner-icon" style={{ position: 'absolute', right: 0, top: '50%', marginTop: '-9px' }} />
+                          <div className="spinner-icon spinner-icon-right" />
                         )}
                         {searchSuggestions.type === 'employee' && searchSuggestions.data.length > 0 && (
                           <div className="autocomplete-dropdown">
                             {searchSuggestions.data.map(emp => (
                               <div key={emp.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('employee', emp)}>
-                                <div className="customer-avatar">{emp.name.charAt(0)}</div>
+                                <div className="customer-avatar">{emp.name.trim().split(' ').at(-1)[0]}</div>
                                 <div className="customer-info">
                                   <div className="autocomplete-name">{emp.name}</div>
                                 </div>
@@ -1236,20 +1633,20 @@ function Bookings({ data }) {
                       <img src={noteIcon} alt="notes" />
                     </div>
                     <div className="booking-row-content">
-                      <input className="form-input" style={{ border: 'none', fontSize: '16px', fontWeight: 500, boxShadow: 'none' }}
+                      <input className="form-input form-input-clean"
                         placeholder="Notes" value={bookForm.notes} onChange={e => setBookForm({ ...bookForm, notes: e.target.value })} />
                     </div>
                   </div>
                 </div>
 
                 <div className="modal-footer">
-                  <button type="submit" className="btn btn-primary" style={{ padding: '12px 32px', borderRadius: '24px', background: '#111' }}>
+                  <button type="submit" className="btn btn-primary btn-submit-booking">
                     Tạo
                   </button>
                 </div>
               </form>
             </div>
-          </div>
+          </div >
         )
       }
     </div >

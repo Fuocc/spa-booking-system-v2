@@ -181,7 +181,7 @@ function Customers() {
                           <button className="btn-icon" onClick={() => openEdit(c)} title="Sửa">
                             <FiEdit2 size={14} />
                           </button>
-                          <button className="btn-icon danger" onClick={() => handleDelete(c.id)} title="Xóa">
+                          <button className="btn-icon btn-danger" onClick={() => handleDelete(c.id)} title="Xóa">
                             <FiTrash2 size={14} />
                           </button>
                         </div>
@@ -272,7 +272,7 @@ function Customers() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Thói quen của khách</label>
+                  <label className="form-label">Ghi chú</label>
                   <textarea
                     className="form-input"
                     rows={3}

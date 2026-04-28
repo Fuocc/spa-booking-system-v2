@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
+// import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
 import Employees from './pages/Employees';
 import Services from './pages/Services';
 import Bookings from './pages/Bookings';
 import Branches from './pages/Branches';
 import EmployeeSchedules from './pages/EmployeeSchedules';
-import Webhooks from './pages/Webhooks';
+import Settings from './pages/Settings';
 import Sidebar from './components/Sidebar';
 
 function App() {
@@ -65,14 +65,14 @@ function App() {
       <div className="main-content">
         <div className="page-content">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            {/* <Route path="/" element={<Dashboard />} /> */}
+            <Route path="/" element={<Bookings />} />
             <Route path="/customers" element={<Customers />} />
             <Route path="/employees" element={<Employees />} />
             <Route path="/services" element={<Services />} />
-            <Route path="/bookings" element={<Bookings />} />
             <Route path="/branches" element={<Branches />} />
             <Route path="/schedules" element={<EmployeeSchedules />} />
-            <Route path="/webhooks" element={<Webhooks />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

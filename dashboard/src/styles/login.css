@@ -1,0 +1,55 @@
+/* ---- Login Page ---- */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--black);
+}
+
+.login-card {
+  background: var(--white);
+  border-radius: var(--radius-md);
+  padding: 48px 40px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--shadow-lg);
+}
+
+.login-logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-logo h1 {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.login-logo h1 span {
+  color: var(--muted-gray);
+  font-weight: 400;
+  font-size: 18px;
+}
+
+.login-logo p {
+  color: var(--body-gray);
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.login-error {
+  background: var(--error-bg);
+  color: var(--error);
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.login-form .btn-primary {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  margin-top: 8px;
+}

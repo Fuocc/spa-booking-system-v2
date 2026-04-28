@@ -102,8 +102,7 @@ function Employees() {
       <div className="card">
         <div className="card-header">
           <select
-            className="form-select"
-            style={{ maxWidth: 240, padding: '8px 12px', fontSize: 13 }}
+            className="form-input max-w-240 p-8-12 fs-13"
             value={filterBranch}
             onChange={e => setFilterBranch(e.target.value)}
           >
@@ -137,7 +136,7 @@ function Employees() {
               ) : (
                 employees.map(emp => (
                   <tr key={emp.id}>
-                    <td style={{ fontWeight: 600 }}>{emp.name}</td>
+                    <td className="fw-600">{emp.name}</td>
                     <td>{emp.phone || '—'}</td>
                     <td>{emp.branches?.name || '—'}</td>
                     <td>
@@ -148,7 +147,7 @@ function Employees() {
                     <td>
                       <div className="actions-cell">
                         <button className="btn-icon" onClick={() => openEdit(emp)}><FiEdit2 size={14} /></button>
-                        <button className="btn-icon danger" onClick={() => handleDelete(emp.id)}><FiTrash2 size={14} /></button>
+                        <button className="btn-icon btn-danger" onClick={() => handleDelete(emp.id)}><FiTrash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>
@@ -193,7 +192,7 @@ function Employees() {
                 </div>
                 {editing && (
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label className="form-label d-flex align-items-center gap-8">
                       <input type="checkbox" checked={form.is_active}
                         onChange={e => setForm({ ...form, is_active: e.target.checked })} />
                       Đang hoạt động

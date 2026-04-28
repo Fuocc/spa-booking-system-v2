@@ -1,17 +1,18 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { FiHome, FiUsers, FiUserCheck, FiScissors, FiCalendar, FiMapPin, FiLogOut, FiClock, FiZap, FiSettings } from 'react-icons/fi';
 import { Avatar, Circle, Float } from "@chakra-ui/react"
+import '../styles/sidebar.css';
 
 
 const navItems = [
-  { path: '/', label: 'Trang chủ', icon: FiHome },
-  { path: '/bookings', label: 'Lịch hẹn', icon: FiCalendar },
+  // { path: '/', label: 'Trang chủ', icon: FiHome },
+  { path: '/', label: 'Lịch hẹn', icon: FiCalendar },
   { path: '/schedules', label: 'Lịch nhân viên', icon: FiClock },
   { path: '/customers', label: 'Khách hàng', icon: FiUsers },
   { path: '/employees', label: 'Nhân viên', icon: FiUserCheck },
   { path: '/services', label: 'Dịch vụ', icon: FiScissors },
   { path: '/branches', label: 'Chi nhánh', icon: FiMapPin },
-  { path: '/webhooks', label: 'Setting', icon: FiSettings },
+  { path: '/settings', label: 'Cài đặt', icon: FiSettings },
 ];
 
 function Sidebar({ user, onLogout }) {
@@ -25,7 +26,7 @@ function Sidebar({ user, onLogout }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <h1>YOi <span>Dashboard</span></h1>
+        <h1>Ý Ơi <span>Dashboard</span></h1>
       </div>
 
       <nav className="sidebar-nav">

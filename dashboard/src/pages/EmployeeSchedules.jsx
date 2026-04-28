@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { FiChevronLeft, FiChevronRight, FiPlus } from 'react-icons/fi';
 import { getEmployees, getEmployeeSchedules, createBulkSchedule, deleteEmployeeSchedule, getBranches } from '../api';
 import { toast } from 'react-toastify'
+import '../styles/schedules.css';
 
 function getWeekDates(date) {
   const d = new Date(date);
@@ -21,6 +22,7 @@ function toDateStr(d) {
 }
 
 const DAY_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+const DAY_FULL_NAMES = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
 function EmployeeSchedules() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -30,6 +32,7 @@ function EmployeeSchedules() {
   const [filterBranch, setFilterBranch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
+    id: null,
     employee_id: '', start_time: '10:00', end_time: '20:00',
     is_day_off: false, note: '', selectedDays: []
   });
@@ -85,12 +88,26 @@ function EmployeeSchedules() {
     return schedules.find(s => s.employee_id === empId && s.date === dateStr);
   };
 
-  const openScheduleModal = (empId) => {
-    setScheduleForm({
-      employee_id: empId || employees[0]?.id || '',
-      start_time: '10:00', end_time: '20:00',
-      is_day_off: false, note: '', selectedDays: []
-    });
+  const openScheduleModal = (empId, dateStr, existingSched) => {
+    if (existingSched) {
+      setScheduleForm({
+        id: existingSched.id,
+        employee_id: existingSched.employee_id,
+        start_time: existingSched.start_time?.substring(0, 5) || '10:00',
+        end_time: existingSched.end_time?.substring(0, 5) || '20:00',
+        is_day_off: existingSched.is_day_off,
+        note: existingSched.note || '',
+        selectedDays: [existingSched.date]
+      });
+    } else {
+      setScheduleForm({
+        id: null,
+        employee_id: empId || employees[0]?.id || '',
+        start_time: '10:00', end_time: '20:00',
+        is_day_off: false, note: '',
+        selectedDays: dateStr ? [dateStr] : []
+      });
+    }
     setModalOpen(true);
   };
 
@@ -137,27 +154,24 @@ function EmployeeSchedules() {
     }
   };
 
-  // NEW: create default schedules 10:00-20:00 for ALL employees in current month
-  const createDefaultSchedulesForMonth = async () => {
+  // NEW: create default schedules 10:00-20:00 for ALL employees for the next 30 days
+  const createDefaultSchedulesFor30Days = async () => {
     if (employees.length === 0) {
       alert('Chưa có nhân viên');
       return;
     }
 
-    if (!confirm('Tạo lịch mặc định 10:00 - 20:00 cho TẤT CẢ nhân viên trong tháng này?')) return;
+    if (!confirm('Tạo lịch mặc định 10:00 - 20:00 cho TẤT CẢ nhân viên trong 30 ngày tới?')) return;
 
     setCreatingDefault(true);
     try {
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const dates = Array.from({ length: daysInMonth }, (_, i) => {
-        const d = new Date(year, month, i + 1);
+      const dates = Array.from({ length: 30 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() + i);
         return toDateStr(d);
       });
 
       // Create schedules for each employee (bulk per employee)
-      // API createBulkSchedule does upsert on (employee_id,date) so safe to run multiple times.
       for (const emp of employees) {
         await createBulkSchedule({
           employee_id: emp.id,
@@ -170,6 +184,7 @@ function EmployeeSchedules() {
       }
 
       await loadData();
+      notify('Đã tạo lịch làm việc cho 30 ngày tới');
     } catch (err) {
       alert(err.message);
     } finally {
@@ -187,8 +202,8 @@ function EmployeeSchedules() {
           <h1 className="page-title">Lịch nhân viên</h1>
           <p className="page-subtitle">Quản lý lịch làm việc, ca làm, ngày nghỉ</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={createDefaultSchedulesForMonth} disabled={creatingDefault}>
+        <div className="d-flex gap-8">
+          <button className="btn btn-secondary" onClick={createDefaultSchedulesFor30Days} disabled={creatingDefault}>
             {creatingDefault ? 'Đang tạo mặc định...' : 'Tạo lịch mặc định (10:00-20:00)'}
           </button>
           <button className="btn btn-primary" onClick={() => openScheduleModal()}>
@@ -206,7 +221,7 @@ function EmployeeSchedules() {
           <span className="cal-week-label">{weekLabel}</span>
         </div>
         <div className="cal-toolbar-right">
-          <select className="form-select" style={{ maxWidth: 200, padding: '6px 12px', fontSize: 13 }}
+          <select className="form-select max-w-200 fs-13"
             value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
             <option value="">Tất cả chi nhánh</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -215,7 +230,7 @@ function EmployeeSchedules() {
       </div>
 
       {/* Schedule Grid */}
-      <div className="card" style={{ overflow: 'auto' }}>
+      <div className="card overflow-auto">
         <table className="schedule-table">
           <thead>
             <tr>
@@ -235,7 +250,7 @@ function EmployeeSchedules() {
           <tbody>
             {employees.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#afafaf' }}>
+                <td colSpan={8} className="text-center text-muted" style={{ padding: 40 }}>
                   Chưa có nhân viên
                 </td>
               </tr>
@@ -243,8 +258,8 @@ function EmployeeSchedules() {
               employees.map(emp => (
                 <tr key={emp.id}>
                   <td className="schedule-emp-name">
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
-                    <div style={{ fontSize: 11, color: '#afafaf' }}>{emp.branches?.name}</div>
+                    <div className="fw-600 fs-13">{emp.name}</div>
+                    <div className="fs-11 text-muted">{emp.branches?.name}</div>
                   </td>
                   {weekDates.map(d => {
                     const ds = toDateStr(d);
@@ -253,17 +268,10 @@ function EmployeeSchedules() {
 
                     return (
                       <td key={ds} className={`schedule-cell${isToday ? ' today' : ''}`}
-                        onClick={() => {
-                          setScheduleForm(f => ({
-                            ...f,
-                            employee_id: emp.id,
-                            selectedDays: [ds]
-                          }));
-                          setModalOpen(true);
-                        }}>
+                        onClick={() => openScheduleModal(emp.id, ds)}>
                         {sched ? (
                           <div className={`schedule-badge ${sched.is_day_off ? 'day-off' : 'working'}`}
-                            onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(sched.id); }}>
+                            onClick={(e) => { e.stopPropagation(); openScheduleModal(emp.id, ds, sched); }}>
                             {sched.is_day_off ? (
                               <span>Nghỉ</span>
                             ) : (
@@ -290,7 +298,12 @@ function EmployeeSchedules() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Xếp lịch làm việc</h3>
-              <button className="modal-close" onClick={() => setModalOpen(false)}>×</button>
+              <button className="modal-close" onClick={() => setModalOpen(false)}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19 5L5 19" stroke="black" stroke-miterlimit="10"></path>
+                  <path d="M5 5L19 19" stroke="black" stroke-miterlimit="10"></path>
+                </svg>
+              </button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
@@ -305,7 +318,7 @@ function EmployeeSchedules() {
 
                 <div className="form-group">
                   <label className="form-label">Chọn ngày (bấm để chọn/bỏ chọn)</label>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <div className="d-flex gap-6 flex-wrap">
                     {weekDates.map(d => {
                       const ds = toDateStr(d);
                       const selected = scheduleForm.selectedDays.includes(ds);
@@ -321,7 +334,7 @@ function EmployeeSchedules() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label className="form-label d-flex align-items-center gap-8">
                     <input type="checkbox" checked={scheduleForm.is_day_off}
                       onChange={e => setScheduleForm({ ...scheduleForm, is_day_off: e.target.checked })} />
                     Ngày nghỉ
@@ -351,14 +364,17 @@ function EmployeeSchedules() {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>Hủy</button>
+                {scheduleForm.id && (
+                  <button type="button" className="btn btn-danger" onClick={() => handleDeleteSchedule(scheduleForm.id)}>Xóa lịch làm</button>
+                )}
                 <button type="submit" className="btn btn-primary">Lưu lịch</button>
               </div>
             </form>
           </div>
-        </div>
-      )}
-    </div>
+        </div >
+      )
+      }
+    </div >
   );
 }
 

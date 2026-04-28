@@ -52,16 +52,28 @@ router.get('/:id', async (req, res) => {
 // POST create service
 router.post('/', async (req, res) => {
   try {
-    const { name, description, duration_minutes, price, is_active } = req.body;
-    const { data, error } = await supabase
+    const { name, description, duration_minutes, price, is_active, category, color } = req.body;
+    let payload = { name, description, duration_minutes, price, is_active: is_active !== false };
+    
+    let result = await supabase
       .from('services')
-      .insert([{ name, description, duration_minutes, price, is_active: is_active !== false }])
+      .insert([{ ...payload, category, color }])
       .select()
       .single();
 
-    if (error) throw error;
-    res.status(201).json(data);
+    // Fallback if category/color columns do not exist
+    if (result.error && result.error.message && result.error.message.includes('column')) {
+      result = await supabase
+        .from('services')
+        .insert([payload])
+        .select()
+        .single();
+    }
+
+    if (result.error) throw result.error;
+    res.status(201).json(result.data);
   } catch (err) {
+    console.error('Create service error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -69,17 +81,30 @@ router.post('/', async (req, res) => {
 // PUT update service
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, duration_minutes, price, is_active } = req.body;
-    const { data, error } = await supabase
+    const { name, description, duration_minutes, price, is_active, category, color } = req.body;
+    let payload = { name, description, duration_minutes, price, is_active };
+
+    let result = await supabase
       .from('services')
-      .update({ name, description, duration_minutes, price, is_active })
+      .update({ ...payload, category, color })
       .eq('id', req.params.id)
       .select()
       .single();
 
-    if (error) throw error;
-    res.json(data);
+    // Fallback if category/color columns do not exist
+    if (result.error && result.error.message && result.error.message.includes('column')) {
+      result = await supabase
+        .from('services')
+        .update(payload)
+        .eq('id', req.params.id)
+        .select()
+        .single();
+    }
+
+    if (result.error) throw result.error;
+    res.json(result.data);
   } catch (err) {
+    console.error('Update service error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

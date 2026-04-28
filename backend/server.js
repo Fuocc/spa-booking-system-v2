@@ -29,7 +29,8 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // API Routes
 app.use('/api/branches', require('./routes/branches'));
@@ -42,6 +43,7 @@ app.use('/api/availability', require('./routes/availability'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/employee-schedules', require('./routes/employeeSchedules'));
 app.use('/api/webhooks', require('./routes/webhooks'));
+app.use('/api/settings', require('./routes/settings'));
 
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, '..', 'frontend')));

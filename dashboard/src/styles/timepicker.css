@@ -18,7 +18,12 @@
   font-size: 16px;
   font-weight: 500;
   transition: all 0.2s ease;
-  user-select: none;
+}
+
+.custom-time-picker-trigger:focus {
+  outline: none;
+  background-color: #f8f9fa;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
 }
 
 .custom-time-picker-trigger:hover {
