@@ -5,7 +5,7 @@
 
 const API_BASE = window.location.origin + '/api';
 
-const DISABLE_AFTER_TIME = '20:00'; // from 20:00 -> disabled on UI (still show slots)
+const DISABLE_AFTER_TIME = '20:15'; // from 20:15 -> disabled on UI (still show slots)
 const SKIP_DURATION_MINUTES = 60;
 
 const CUSTOMER_STORAGE_KEY = 'spa_booking_customer';
@@ -255,7 +255,7 @@ function renderTimeSlots() {
 
     const $slot = document.createElement('button');
     $slot.type = 'button';
-    $slot.className = `time-slot${selectable ? '' : ' disabled'}`;
+    $slot.className = `time-slot${selectable ? '' : ' hidden'}`;
     $slot.textContent = slot.start_time;
     $slot.dataset.start = slot.start_time;
     $slot.dataset.end = slot.end_time;

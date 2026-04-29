@@ -441,12 +441,8 @@ textarea {
   border-color: var(--black);
 }
 
-.time-slot.disabled {
-  background: var(--chip-gray);
-  border-color: var(--border-gray);
-  color: var(--muted-gray);
-  cursor: not-allowed;
-  opacity: 0.6;
+.time-slot.hidden {
+  display: none;
 }
 
 /* ---- Confirmation Card ---- */

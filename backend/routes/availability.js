@@ -244,7 +244,7 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
     for (let m = 0; m < 60; m += SLOT_STEP_MINUTES) {
       const startMinutes = h * 60 + m;
-      const endMinutes = startMinutes + duration + bufferTime;
+      const endMinutes = startMinutes + duration;
 
       if (endMinutes > CLOSE_HOUR * 60) continue;
 
@@ -261,7 +261,8 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
         const bStart = timeToMinutes(booking.start_time);
         const bEnd = timeToMinutes(booking.end_time) + bufferTime;
 
-        if (startMinutes < bEnd && bStart < (startMinutes + duration + bufferTime)) {
+        // Check if proposed slot [startMinutes, startMinutes + duration] overlaps [bStart, bEnd]
+        if (startMinutes < bEnd && bStart < (startMinutes + duration)) {
           if (booking.employee_id) busyEmployees.add(booking.employee_id);
           if (booking.bed_id) busyBeds.add(booking.bed_id);
         }
@@ -274,8 +275,8 @@ async function getAvailabilityForBranch({ branchId, date, guestCount, durationMi
         if (!s) return false;
         const sStart = timeToMinutes(String(s.start_time).substring(0, 5));
         const sEnd = timeToMinutes(String(s.end_time).substring(0, 5));
-        // Employee must be working for the duration + buffer
-        return startMinutes >= sStart && (startMinutes + duration + bufferTime) <= sEnd;
+        // Proposed slot must fit within working hours
+        return startMinutes >= sStart && (startMinutes + duration) <= sEnd;
       });
 
       const availableEmployees = availableWorkingEmployees.length;

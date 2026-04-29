@@ -23,9 +23,9 @@ function Login({ onLogin }) {
 
       // Check admin role
       const role = data.user?.user_metadata?.role || data.user?.app_metadata?.role;
-      if (role !== 'admin') {
+      if (role !== 'admin' && role !== 'staff') {
         await supabase.auth.signOut();
-        throw new Error('Bạn không có quyền truy cập Dashboard');
+        throw new Error('Bạn không có quyền truy cập hệ thống');
       }
 
       onLogin(data.session);

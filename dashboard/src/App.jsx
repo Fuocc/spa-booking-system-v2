@@ -18,6 +18,8 @@ function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const userRole = session?.user?.user_metadata?.role || session?.user?.app_metadata?.role;
+
   useEffect(() => {
     // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -65,14 +67,18 @@ function App() {
       <div className="main-content">
         <div className="page-content">
           <Routes>
-            {/* <Route path="/" element={<Dashboard />} /> */}
             <Route path="/" element={<Bookings />} />
             <Route path="/customers" element={<Customers />} />
-            <Route path="/employees" element={<Employees />} />
-            <Route path="/services" element={<Services />} />
-            <Route path="/branches" element={<Branches />} />
-            <Route path="/schedules" element={<EmployeeSchedules />} />
-            <Route path="/settings" element={<Settings />} />
+
+            {userRole === 'admin' && (
+              <>
+                <Route path="/employees" element={<Employees />} />
+                <Route path="/services" element={<Services />} />
+                <Route path="/branches" element={<Branches />} />
+                <Route path="/schedules" element={<EmployeeSchedules />} />
+                <Route path="/settings" element={<Settings />} />
+              </>
+            )}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

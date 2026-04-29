@@ -125,9 +125,9 @@
   gap: 10px;
 }
 
-.detail-view>.booking-row:nth-child(3)>.booking-row-content {
+/* .detail-view>.booking-row:nth-child(3)>.booking-row-content {
   padding-left: 16px;
-}
+} */
 
 .modal-viewing .btn-trash {
   color: rgb(255, 77, 79);

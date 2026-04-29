@@ -60,6 +60,19 @@
   font-size: 12px;
 }
 
+.customer-avatar-lg {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f3e5ab;
+  color: #8b4513;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 24px;
+}
+
 .customer-info {
   flex: 1;
   display: flex;
@@ -486,10 +499,21 @@
 }
 
 /* Appointment Styling (Premium) */
+.cal-booking-card-wrapper {
+  transition: transform 0.1s, box-shadow 0.2s;
+  cursor: pointer;
+}
+
+.cal-booking-card-wrapper:hover {
+  transform: scale(1.02);
+  z-index: 20;
+}
+
+.cal-booking-card-wrapper:hover .cal-booking-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
 .cal-booking-card {
-  position: absolute;
-  left: 0;
-  right: 1px;
   padding: 10px;
   background-color: #eff6ff;
   border-left: 4px solid #3b82f6;
@@ -498,16 +522,7 @@
   display: flex;
   flex-direction: column;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  z-index: 2;
-  cursor: pointer;
-  transition: transform 0.1s, box-shadow 0.2s;
   overflow: hidden;
-}
-
-.cal-booking-card:hover {
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  z-index: 20;
 }
 
 .cal-booking-time {
@@ -525,6 +540,11 @@
 .cal-booking-service {
   font-size: 14px;
   opacity: 0.9;
+}
+
+.cal-booking-buffer {
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 /* ---- Time Slots (Dashboard Booking Modal) ---- */
@@ -844,4 +864,152 @@
 
 .cal-staff-column {
   cursor: crosshair;
+}
+
+/* ---- Card Drag & Drop Reorder ---- */
+.is-original-placeholder {
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.is-moving-active {
+  z-index: 9999;
+  cursor: grabbing;
+  opacity: 1;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+/* ---- Drag Confirmation Popup ---- */
+.drag-confirm-overlay {
+  z-index: 10000;
+}
+
+.drag-confirm-popup {
+  background: white;
+  padding: 28px;
+  border-radius: 16px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.drag-confirm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.drag-confirm-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111;
+  margin: 0;
+}
+
+.drag-confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drag-confirm-label {
+  font-size: 13px;
+  color: #777;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.drag-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.drag-confirm-time-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.drag-confirm-time {
+  font-size: 15px;
+  font-weight: 500;
+  color: #111;
+  white-space: nowrap;
+}
+
+.drag-confirm-staff-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.drag-confirm-staff-initial {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #f3e5ab;
+  color: #8b4513;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.drag-confirm-staff-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #111;
+}
+
+.drag-confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.drag-confirm-cancel {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 12px 28px;
+  border-radius: 24px;
+  transition: background 0.2s;
+}
+
+.drag-confirm-cancel:hover {
+  background: #f5f5f5;
+}
+
+.drag-confirm-submit {
+  background: #111;
+  color: #fff;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 24px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  transition: background 0.2s;
+}
+
+.drag-confirm-submit:hover {
+  background: #333;
+}
+
+/* Disabled submit button style */
+.btn-submit-booking:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

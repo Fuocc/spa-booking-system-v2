@@ -147,15 +147,16 @@
   border: 1px solid #eee;
   max-height: 150px;
   overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
 .autocomplete-item {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 0 16px;
   gap: 12px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.25s ease-out;
 }
 
 .autocomplete-item:hover {
@@ -191,10 +192,13 @@
 }
 
 .autocomplete-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 16px;
   border-top: 1px solid #f1f5f9;
   font-size: 13px;
-  color: #6366f1;
+  color: #888888;
   font-weight: 500;
   background: #fdfdff;
   cursor: pointer;

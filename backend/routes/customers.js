@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../supabaseClient');
 
+// Normalize Vietnamese diacritics for Latin search
+const normalize = (str) => (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 // GET all customers
 router.get('/', async (req, res) => {
   try {
@@ -10,12 +13,21 @@ router.get('/', async (req, res) => {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (req.query.search) {
-      query = query.or(`name.ilike.%${req.query.search}%,phone.ilike.%${req.query.search}%,id.ilike.%${req.query.search}%`);
-    }
-
     const { data, error } = await query;
     if (error) throw error;
+
+    // Client-side filtering with Latin/diacritics normalization
+    if (req.query.search) {
+      const searchNorm = normalize(req.query.search);
+      const filtered = data.filter(c => {
+        const nameNorm = normalize(c.name);
+        const phone = (c.phone || '').toLowerCase();
+        const id = (c.id || '').toString().toLowerCase();
+        return nameNorm.includes(searchNorm) || phone.includes(searchNorm) || id.includes(searchNorm);
+      });
+      return res.json(filtered);
+    }
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });

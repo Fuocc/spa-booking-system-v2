@@ -33,7 +33,7 @@ function EmployeeSchedules() {
   const [modalOpen, setModalOpen] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
     id: null,
-    employee_id: '', start_time: '10:00', end_time: '20:00',
+    employee_id: '', start_time: '10:00', end_time: '22:00',
     is_day_off: false, note: '', selectedDays: []
   });
 
@@ -94,7 +94,7 @@ function EmployeeSchedules() {
         id: existingSched.id,
         employee_id: existingSched.employee_id,
         start_time: existingSched.start_time?.substring(0, 5) || '10:00',
-        end_time: existingSched.end_time?.substring(0, 5) || '20:00',
+        end_time: existingSched.end_time?.substring(0, 5) || '22:00',
         is_day_off: existingSched.is_day_off,
         note: existingSched.note || '',
         selectedDays: [existingSched.date]
@@ -103,7 +103,7 @@ function EmployeeSchedules() {
       setScheduleForm({
         id: null,
         employee_id: empId || employees[0]?.id || '',
-        start_time: '10:00', end_time: '20:00',
+        start_time: '10:00', end_time: '22:00',
         is_day_off: false, note: '',
         selectedDays: dateStr ? [dateStr] : []
       });
@@ -154,14 +154,14 @@ function EmployeeSchedules() {
     }
   };
 
-  // NEW: create default schedules 10:00-20:00 for ALL employees for the next 30 days
+  // NEW: create default schedules 10:00-22:00 for ALL employees for the next 30 days
   const createDefaultSchedulesFor30Days = async () => {
     if (employees.length === 0) {
       alert('Chưa có nhân viên');
       return;
     }
 
-    if (!confirm('Tạo lịch mặc định 10:00 - 20:00 cho TẤT CẢ nhân viên trong 30 ngày tới?')) return;
+    if (!confirm('Tạo lịch mặc định 10:00 - 22:00 cho TẤT CẢ nhân viên trong 30 ngày tới?')) return;
 
     setCreatingDefault(true);
     try {
@@ -177,7 +177,7 @@ function EmployeeSchedules() {
           employee_id: emp.id,
           dates,
           start_time: '10:00',
-          end_time: '20:00',
+          end_time: '22:00',
           is_day_off: false,
           note: null
         });
@@ -204,7 +204,7 @@ function EmployeeSchedules() {
         </div>
         <div className="d-flex gap-8">
           <button className="btn btn-secondary" onClick={createDefaultSchedulesFor30Days} disabled={creatingDefault}>
-            {creatingDefault ? 'Đang tạo mặc định...' : 'Tạo lịch mặc định (10:00-20:00)'}
+            {creatingDefault ? 'Đang tạo mặc định...' : 'Tạo lịch mặc định (10:00-22:00)'}
           </button>
           <button className="btn btn-primary" onClick={() => openScheduleModal()}>
             <FiPlus /> Xếp lịch

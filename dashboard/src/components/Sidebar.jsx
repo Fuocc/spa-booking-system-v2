@@ -16,12 +16,36 @@ const navItems = [
 ];
 
 function Sidebar({ user, onLogout }) {
-  const location = useLocation();
+  // const location = useLocation();
 
-  const getInitial = (email) => {
-    if (!email) return 'A';
-    return email.charAt(0).toUpperCase();
-  };
+  // const getInitial = (email) => {
+  //   if (!email) return 'A';
+  //   return email.charAt(0).toUpperCase();
+  // };
+
+  const role = user?.user_metadata?.role || user?.app_metadata?.role;
+
+  // Định nghĩa menu cho từng quyền
+  const adminItems = [
+    { path: '/', label: 'Lịch hẹn', icon: FiCalendar },
+    { path: '/schedules', label: 'Lịch nhân viên', icon: FiClock },
+    { path: '/customers', label: 'Khách hàng', icon: FiUsers },
+    { path: '/employees', label: 'Nhân viên', icon: FiUserCheck },
+    { path: '/services', label: 'Dịch vụ', icon: FiScissors },
+    { path: '/branches', label: 'Chi nhánh', icon: FiMapPin },
+    { path: '/settings', label: 'Cài đặt', icon: FiSettings },
+  ];
+
+  const staffItems = [
+    { path: '/', label: 'Lịch hẹn', icon: FiCalendar },
+    { path: '/customers', label: 'Khách hàng', icon: FiUsers },
+  ];
+
+  // Chọn menu hiển thị dựa trên role
+  const itemsToRender = role === 'admin' ? adminItems : staffItems;
+
+  // Hiển thị vai trò người dùng động
+  const roleLabel = role === 'admin' ? 'Quản trị viên' : 'Nhân viên';
 
   return (
     <aside className="sidebar">
@@ -30,7 +54,7 @@ function Sidebar({ user, onLogout }) {
       </div>
 
       <nav className="sidebar-nav">
-        {navItems.map(item => (
+        {itemsToRender.map(item => (
           <NavLink
             key={item.path}
             to={item.path}
@@ -57,8 +81,8 @@ function Sidebar({ user, onLogout }) {
             </Float>
           </Avatar.Root>
           <div className="sidebar-user-info">
-            <div className="sidebar-user-name">{user?.email?.split('@')[0] || 'Admin'}</div>
-            <div className="sidebar-user-role">Quản trị viên</div>
+            <div className="sidebar-user-name">{user?.email?.split('@')[0]}</div>
+            <div className="sidebar-user-role">{roleLabel}</div>
           </div>
         </div>
         <button className="btn-logout" onClick={onLogout}>

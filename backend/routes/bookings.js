@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
       .from('bookings')
       .select(`
         *,
-        customers(id, name, phone, email),
+        customers(id, name, phone, email, habits),
         services(name, duration_minutes, price),
         employees(name),
         beds(name),
@@ -44,7 +44,7 @@ router.get('/:id', async (req, res) => {
       .from('bookings')
       .select(`
         *,
-        customers(id, name, phone, email),
+        customers(id, name, phone, email, habits),
         services(name, duration_minutes, price),
         employees(name),
         beds(name),
@@ -67,7 +67,7 @@ router.get('/:id', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { service_id, branch_id, start_time, end_time: clientEndTime, employee_id, notes } = req.body;
+    const { service_id, branch_id, start_time, end_time: clientEndTime, employee_id, notes, customer_id, booking_date } = req.body;
 
     // Basic validation
     if (!service_id || !branch_id || !start_time || !employee_id) {
@@ -118,7 +118,7 @@ router.put('/:id', async (req, res) => {
     let end_time = clientEndTime;
     if (!end_time) {
       const startMinutes = timeToMinutes(start_time);
-      const endMinutes = startMinutes + (service.duration_minutes || 60) + 15;
+      const endMinutes = startMinutes + (service.duration_minutes || 60);
       const endH = Math.floor(endMinutes / 60);
       const endM = endMinutes % 60;
       end_time = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
@@ -134,6 +134,8 @@ router.put('/:id', async (req, res) => {
         service_id,
         branch_id,
         employee_id,
+        customer_id: customer_id !== undefined ? customer_id : booking.customer_id,
+        booking_date: booking_date !== undefined ? booking_date : booking.booking_date,
         start_time,
         end_time,
         total_price,
@@ -208,7 +210,7 @@ router.post('/', async (req, res) => {
 
     // 2) Calculate end_time (Use client's end_time if provided)
     const startMinutes = timeToMinutes(start_time);
-    const endMinutes = startMinutes + duration + 15;
+    const endMinutes = startMinutes + duration;
 
     let end_time = clientEndTime;
     if (!end_time) {
@@ -326,6 +328,14 @@ router.post('/', async (req, res) => {
     // 7) Create bookings for each guest (auto assign employee/bed)
     const createdBookings = [];
 
+    // 7.0) Load buffer time from settings
+    const { data: settingsData } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'buffer_time')
+      .single();
+    const bufferTime = settingsData ? parseInt(settingsData.value) : 15;
+
     for (let g = 0; g < guestCount; g++) {
       const busyEmployeeIds = new Set();
       const allRelevantBookings = [...dayBookings, ...createdBookings.map(b => ({
@@ -337,7 +347,7 @@ router.post('/', async (req, res) => {
 
       for (const booking of allRelevantBookings) {
         const bStart = timeToMinutes(booking.start_time);
-        const bEnd = timeToMinutes(booking.end_time);
+        const bEnd = timeToMinutes(booking.end_time) + bufferTime;
         if (startMinutes < bEnd && bStart < endMinutes) {
           busyEmployeeIds.add(booking.employee_id);
         }
@@ -356,9 +366,9 @@ router.post('/', async (req, res) => {
       }
 
       availableEmployees.sort((a, b) => (employeeBookingCount[a.id] || 0) - (employeeBookingCount[b.id] || 0));
-      
+
       let assignedEmployee = availableEmployees[0];
-      
+
       // If employee_id is explicitly requested (e.g. from admin click), try to use it for the first guest
       if (g === 0 && req.body.employee_id) {
         const requestedEmp = availableEmployees.find(e => e.id === req.body.employee_id);

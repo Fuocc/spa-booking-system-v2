@@ -6,7 +6,8 @@ import TimePickerInput from '../components/TimePickerInput';
 
 import {
   getBookingsRange, createBooking, updateBooking, deleteBooking,
-  getBranches, getServices, getEmployees, getCustomers, updateCustomer, getEmployeeSchedules
+  getBranches, getServices, getEmployees, getCustomers, updateCustomer, getEmployeeSchedules,
+  getSettings
 } from '../api';
 
 import userIcon from '../assets/user-icon.svg';
@@ -125,9 +126,15 @@ function Bookings({ data }) {
   const [employeeSchedules, setEmployeeSchedules] = useState([]);
   const [showDetailMore, setShowDetailMore] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  // Drag-and-drop reorder state
+  const [cardDrag, setCardDrag] = useState(null); // { booking, startCol, startTop }
+  const [cardDragClone, setCardDragClone] = useState(null);
+  const [dragConfirm, setDragConfirm] = useState(null); // { booking, fromStaff, fromTime, toStaff, toTime, toStaffId, newDate, newStart, newEnd }
   // Drag-to-create state
   const [dragInfo, setDragInfo] = useState(null); // { startY, currentY, staffId, staffName, columnEl }
   const [hoverInfo, setHoverInfo] = useState(null); // { staffId, y, colLeft, colWidth }
+  const [bufferTime, setBufferTime] = useState(15);
   const calendarRef = useRef(null);
   const moreMenuRef = useRef(null);
   const searchTimeoutRef = useRef(null);
@@ -209,6 +216,75 @@ function Bookings({ data }) {
     };
   }, [dragInfo, employees, currentDate]);
 
+  // --- Card drag-and-drop reorder: global mousemove/mouseup ---
+  useEffect(() => {
+    if (!cardDrag) return;
+
+    const handleMouseMove = (e) => {
+      const cols = document.querySelectorAll('.cal-staff-column');
+      let targetCol = null;
+      for (const col of cols) {
+        const rect = col.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right) {
+          targetCol = col;
+          break;
+        }
+      }
+      if (targetCol) {
+        const rect = targetCol.getBoundingClientRect();
+        const rawY = e.clientY - rect.top;
+        const snappedY = Math.floor(rawY / ROW_HEIGHT) * ROW_HEIGHT;
+        setCardDrag(prev => prev ? { ...prev, currentCol: targetCol, currentTop: snappedY } : null);
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (!cardDrag) return;
+      const finalCol = cardDrag.currentCol || cardDrag.startCol;
+      const finalTop = cardDrag.currentTop ?? cardDrag.startTop;
+      const toStaffId = finalCol?.getAttribute('data-staff-id');
+      const toStaffName = finalCol?.getAttribute('data-staff-name') || '';
+      const fromStaffName = cardDrag.startCol?.getAttribute('data-staff-name') || '';
+
+      const durationPx = cardDrag.heightPx;
+      const newStart = convertYToTime(finalTop);
+      const newEnd = convertYToTime(finalTop + durationPx);
+
+      const origStartMin = timeToMinutes(cardDrag.booking.start_time);
+      const origTop = (origStartMin - OPEN_HOUR * 60) / 60 * 100;
+      const origStaffId = cardDrag.booking.employee_id || cardDrag.booking.employees?.id;
+
+      // Check if actually moved
+      if (Math.abs(finalTop - origTop) < 5 && toStaffId === origStaffId) {
+        // Not moved — treat as click, open detail
+        handleOpenDetail(cardDrag.booking);
+      } else {
+        // Show confirmation popup
+        const fromStart = formatTime(cardDrag.booking.start_time);
+        const fromEnd = formatTime(cardDrag.booking.end_time);
+        setDragConfirm({
+          booking: cardDrag.booking,
+          fromStaff: fromStaffName,
+          fromTime: `${fromStart} — ${fromEnd}`,
+          toStaff: toStaffName,
+          toTime: `${newStart} — ${newEnd}`,
+          toStaffId,
+          newStart,
+          newEnd,
+          newDate: toDateStr(currentDate)
+        });
+      }
+      setCardDrag(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, true);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove, true);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [cardDrag, currentDate]);
+
   useEffect(() => {
     if (!showCalendar) return;
     const handleOutside = (e) => {
@@ -233,9 +309,14 @@ function Bookings({ data }) {
 
   const loadInitialData = async () => {
     try {
-      const [b, s] = await Promise.all([getBranches(), getServices()]);
+      const [b, s, settingsData] = await Promise.all([getBranches(), getServices(), getSettings()]);
       setBranches(b);
       setServices(s);
+
+      if (settingsData && settingsData.buffer_time) {
+        setBufferTime(parseInt(settingsData.buffer_time) || 0);
+      }
+
       if (b.length > 0 && !filterBranch) {
         setFilterBranch(b[0].id);
       }
@@ -320,7 +401,7 @@ function Bookings({ data }) {
   };
 
   const handleColumnHover = (e, emp) => {
-    if (dragInfo) return; // Don't show ghost while dragging
+    if (dragInfo || cardDrag) return; // Don't show ghost while dragging
     const rect = e.currentTarget.getBoundingClientRect();
     const gridRect = gridRef.current?.getBoundingClientRect();
     if (!gridRect) return;
@@ -334,6 +415,50 @@ function Bookings({ data }) {
       colWidth: rect.width,
       time: convertYToTime(snappedY)
     });
+  };
+
+  // --- Card drag-and-drop: start ---
+  const handleCardDragStart = (e, booking) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const card = e.currentTarget;
+    const col = card.closest('.cal-staff-column');
+    if (!col) return;
+
+    const startMin = timeToMinutes(booking.start_time);
+    const endMin = timeToMinutes(booking.end_time);
+    const top = (startMin - OPEN_HOUR * 60) / 60 * 100;
+    const height = (endMin - startMin) / 60 * 100;
+
+    setCardDrag({
+      booking,
+      startCol: col,
+      startTop: top,
+      currentCol: col,
+      currentTop: top,
+      heightPx: height
+    });
+  };
+
+  const handleDragConfirm = async () => {
+    if (!dragConfirm) return;
+    try {
+      await updateBooking(dragConfirm.booking.id, {
+        employee_id: dragConfirm.toStaffId,
+        start_time: dragConfirm.newStart,
+        end_time: dragConfirm.newEnd,
+        booking_date: dragConfirm.newDate
+      });
+      notify('Đã cập nhật lịch hẹn!');
+      loadBookings();
+    } catch (err) {
+      alert('Lỗi: ' + err.message);
+    }
+    setDragConfirm(null);
+  };
+
+  const handleDragCancel = () => {
+    setDragConfirm(null);
   };
 
   // ---- Booking Modal Logic ----
@@ -365,7 +490,7 @@ function Bookings({ data }) {
 
     // Copy data from detailEdit
     const service = services.find(s => s.id === detailEdit.service_id);
-    const employee = employees.find(e => e.id === detailEdit.employee_id);
+    // const employee = employees.find(e => e.id === detailEdit.employee_id);
 
     setBookForm({
       branch_id: detailEdit.branch_id,
@@ -375,8 +500,9 @@ function Bookings({ data }) {
       customer_name: detailEdit.customer_name,
       customer_phone: detailEdit.customer_phone,
       customer_email: detailEdit.customer_email,
+      customer_habits: detailEdit.customer_habits,
       service_search: service?.name || '',
-      employee_search: employee?.name || '',
+      employee_search: '',
       employee_id: detailEdit.employee_id,
       booking_date: detailEdit.booking_date,
       start_time: detailEdit.start_time,
@@ -435,7 +561,7 @@ function Bookings({ data }) {
     setter(prev => ({
       ...prev,
       [field]: val,
-      ...(type === 'customer' ? { customer_id: '' } : {})
+      ...(type === 'customer' ? { customer_id: '', customer_search: val } : {})
     }));
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -564,12 +690,29 @@ function Bookings({ data }) {
 
   const handleBookSubmit = async (e) => {
     e.preventDefault();
+    if (isCreating) return;
+
+    // Auto-assign "Khách lạ" if customer is empty
+    let finalCustomerId = bookForm.customer_id;
+    let finalCustomerName = bookForm.customer_name;
+    let finalCustomerPhone = bookForm.customer_phone;
+
+    if (!finalCustomerName && !finalCustomerId) {
+      try {
+        const allCustomers = await getCustomers('Khách lạ');
+        const khachLa = allCustomers.find(c => normalize(c.name).includes('khach la'));
+        if (khachLa) {
+          finalCustomerId = khachLa.id;
+          finalCustomerName = khachLa.name;
+          finalCustomerPhone = khachLa.phone || '';
+        }
+      } catch (e) { /* ignore */ }
+    }
 
     // Validation
     const required = {
       'Ngày': bookForm.booking_date,
       'Giờ bắt đầu': bookForm.start_time,
-      'Tên khách': bookForm.customer_name,
       'Chi nhánh': bookForm.branch_id
     };
 
@@ -579,6 +722,7 @@ function Bookings({ data }) {
       return;
     }
 
+    setIsCreating(true);
     try {
       let finalServiceId = bookForm.service_id;
       let finalEndTime = bookForm.end_time;
@@ -587,12 +731,12 @@ function Bookings({ data }) {
         const placeholder = services.find(s => normalize(s.name).includes('giu cho'));
         if (placeholder) {
           finalServiceId = placeholder.id;
-          // If end_time is not set properly, calculate it based on placeholder duration
           if (!finalEndTime || finalEndTime === '--:--' || finalEndTime === bookForm.start_time) {
             finalEndTime = calculateEndTime(bookForm.start_time, placeholder.duration_minutes || 0);
           }
         } else {
           alert('Vui lòng chọn dịch vụ hoặc tạo dịch vụ "Giữ chỗ" để tiếp tục.');
+          setIsCreating(false);
           return;
         }
       }
@@ -601,7 +745,9 @@ function Bookings({ data }) {
         ...bookForm,
         service_id: finalServiceId,
         end_time: finalEndTime,
-        customer_name: normalizeName(bookForm.customer_name)
+        customer_id: finalCustomerId,
+        customer_name: normalizeName(finalCustomerName || 'Khách lạ'),
+        customer_phone: finalCustomerPhone
       };
       await createBooking(finalForm);
       notify('Đặt lịch thành công!');
@@ -609,6 +755,8 @@ function Bookings({ data }) {
       loadBookings();
     } catch (err) {
       alert('Lỗi: ' + err.message);
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -623,34 +771,38 @@ function Bookings({ data }) {
     setDetailSaving(true);
     try {
       // 1. Update Booking
-      const updated = await updateBooking(detailModal.id, {
+      const bookingUpdate = {
         service_id: detailEdit.service_id,
         branch_id: detailEdit.branch_id,
         start_time: detailEdit.start_time,
         booking_date: detailEdit.booking_date,
         end_time: detailEdit.end_time,
         employee_id: detailEdit.employee_id,
-        notes: detailEdit.notes
-      });
+        notes: detailEdit.notes,
+        customer_id: detailEdit.customer_id
+      };
 
-      // 2. Update Customer Info if changed
+      const updated = await updateBooking(detailModal.id, bookingUpdate);
+
+      // 2. Update Customer Info if it's the SAME customer but info changed
       const cust = detailModal.customers;
-      if (cust && (
+      if (detailEdit.customer_id === (detailModal.customer_id || detailModal.customers?.id) && cust && (
         detailEdit.customer_name !== cust.name ||
         detailEdit.customer_phone !== (cust.phone || '') ||
+        detailEdit.customer_habits !== (cust.habits || '') ||
         detailEdit.customer_email !== (cust.email || '')
       )) {
-        await updateCustomer(detailModal.customer_id, {
+        await updateCustomer(detailEdit.customer_id, {
           name: detailEdit.customer_name,
           phone: detailEdit.customer_phone,
-          email: detailEdit.customer_email
+          email: detailEdit.customer_email,
+          habits: detailEdit.customer_habits
         });
-        updated.customers = { ...updated.customers, name: detailEdit.customer_name, phone: detailEdit.customer_phone, email: detailEdit.customer_email };
+        updated.customers = { ...updated.customers, name: detailEdit.customer_name, phone: detailEdit.customer_phone, email: detailEdit.customer_email, habits: detailEdit.customer_habits };
       }
 
       // update list in UI immediately
-      setBookings(prev => prev.map(b => (b.id === updated.id ? updated : b)));
-      setDetailModal(updated); // keep modal in sync
+      loadBookings();
 
       if (typeof notify === 'function') {
         notify('Cập nhật thành công!');
@@ -676,11 +828,14 @@ function Bookings({ data }) {
       end_time: (booking.end_time || '').substring(0, 5),
       employee_id: booking.employee_id || booking.employees?.id || '',
       employee_search: booking.employees?.name || '',
+      customer_search: booking.customers?.name || '',
       notes: booking.notes || '',
       customer_name: booking.customers?.name || '',
       customer_id: booking.customers?.id || '',
       customer_phone: booking.customers?.phone || '',
-      customer_email: booking.customers?.email || ''
+      customer_email: booking.customers?.email || '',
+      customer_habits: booking.customers?.habits || ''
+
     });
 
     setDetailTab('schedule');
@@ -766,7 +921,9 @@ function Bookings({ data }) {
       detailEdit.notes !== (detailModal.notes || '') ||
       detailEdit.customer_name !== (detailModal.customers?.name || '') ||
       detailEdit.customer_phone !== (detailModal.customers?.phone || '') ||
-      detailEdit.customer_email !== (detailModal.customers?.email || '')
+      detailEdit.customer_habits !== (detailModal.customers?.habits || '') ||
+      detailEdit.customer_email !== (detailModal.customers?.email || '') ||
+      detailEdit.customer_id !== (detailModal.customer_id || detailModal.customers?.id || '')
     );
   }, [detailModal, detailEdit]);
 
@@ -887,7 +1044,7 @@ function Bookings({ data }) {
             </div>
 
             {/* Hover ghost (rendered in grid layer) */}
-            {hoverInfo && !dragInfo && (
+            {hoverInfo && !dragInfo && !cardDrag && (
               <div
                 className="cal-hover-ghost"
                 style={{
@@ -936,28 +1093,107 @@ function Bookings({ data }) {
                     const endMin = timeToMinutes(b.end_time);
                     const top = (startMin - OPEN_HOUR * 60) / 60 * 100;
                     const height = (endMin - startMin) / 60 * 100;
+                    const bufferHeight = (bufferTime / 60) * 100;
                     const colors = STATUS_COLORS[b.status] || STATUS_COLORS.confirmed;
 
                     return (
                       <div
                         key={b.id}
-                        className="cal-booking-card"
+                        className={`cal-booking-card-wrapper${cardDrag && cardDrag.booking.id === b.id ? ' is-original-placeholder' : ''}`}
                         style={{
+                          position: 'absolute',
                           top: `${top}px`,
-                          height: `${height}px`,
-                          backgroundColor: colors.bg,
-                          borderLeft: `4px solid ${colors.border}`,
-                          color: colors.text,
+                          width: '100%',
+                          zIndex: 10
                         }}
-                        onClick={(e) => { e.stopPropagation(); handleOpenDetail(b); }}
+                        onMouseDown={(e) => handleCardDragStart(e, b)}
                       >
-                        <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
-                        <div className="cal-booking-name">{b.customers?.name} - {b.customers?.id}</div>
-                        <div className="cal-booking-service">{b.services?.name} - {b.services?.duration_minutes}p</div>
-                        <div className="cal-booking-service">{b.notes ? `Ghi chú: ${b.notes}` : null}</div>
+                        <div
+                          className="cal-booking-card"
+                          style={{
+                            height: `${height}px`,
+                            backgroundColor: colors.bg,
+                            borderLeft: `4px solid ${colors.border}`,
+                            color: colors.text,
+                            marginBottom: 0,
+                            borderRadius: bufferTime > 0 ? '8px 8px 0 0' : '8px'
+                          }}
+                        >
+                          <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
+                          <div className="cal-booking-name">{b.customers?.name}</div>
+                          <div className="cal-booking-service">{b.services?.name} - {b.services?.duration_minutes}p</div>
+                          {height > 40 && <div className="cal-booking-notes">{b.notes ? `Ghi chú: ${b.notes}` : null}</div>}
+                        </div>
+                        {bufferTime > 0 && (
+                          <div
+                            className="cal-booking-buffer"
+                            style={{
+                              height: `${bufferHeight}px`,
+                              background: `repeating-linear-gradient(45deg, ${colors.bg}, ${colors.bg} 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)`,
+                              borderLeft: `4px solid ${colors.border}44`,
+                              borderRadius: '0 0 8px 8px',
+                              fontSize: '10px',
+                              padding: '2px 8px',
+                              color: colors.text,
+                              opacity: 0.8,
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                          >
+                            +{bufferTime}m
+                          </div>
+                        )}
                       </div>
                     );
                   })}
+
+                  {/* Card drag ghost */}
+                  {cardDrag && cardDrag.currentCol?.getAttribute('data-staff-id') === emp.id && (() => {
+                    const b = cardDrag.booking;
+                    const colors = STATUS_COLORS[b.status] || STATUS_COLORS.confirmed;
+                    const ghostStart = convertYToTime(cardDrag.currentTop);
+                    const ghostEnd = convertYToTime(cardDrag.currentTop + cardDrag.heightPx);
+                    const bufferHeight = (bufferTime / 60) * 100;
+
+                    return (
+                      <div
+                        className="cal-booking-card-wrapper is-moving-active"
+                        style={{
+                          position: 'absolute',
+                          top: `${cardDrag.currentTop}px`,
+                          width: '100%',
+                          zIndex: 100
+                        }}
+                      >
+                        <div
+                          className="cal-booking-card"
+                          style={{
+                            height: `${cardDrag.heightPx}px`,
+                            backgroundColor: colors.bg,
+                            borderLeft: `4px solid ${colors.border}`,
+                            color: colors.text,
+                            borderRadius: bufferTime > 0 ? '8px 8px 0 0' : '8px'
+                          }}
+                        >
+                          <div className="cal-booking-time">{ghostStart} - {ghostEnd}</div>
+                          <div className="cal-booking-name">{b.customers?.name}</div>
+                          <div className="cal-booking-service">{b.services?.name}</div>
+                        </div>
+                        {bufferTime > 0 && (
+                          <div
+                            className="cal-booking-buffer"
+                            style={{
+                              height: `${bufferHeight}px`,
+                              background: `repeating-linear-gradient(45deg, ${colors.bg}, ${colors.bg} 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)`,
+                              borderLeft: `4px solid ${colors.border}44`,
+                              borderRadius: '0 0 8px 8px',
+                              opacity: 0.8
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Drag selection overlay */}
                   {dragInfo && dragInfo.staffId === emp.id && (() => {
@@ -1145,15 +1381,65 @@ function Bookings({ data }) {
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <img src={clockIcon} alt="time" className="w-20" />
+                      <img src={clockIcon} alt="time" className="w-24" />
                     </div>
                     <div className="booking-row-content d-flex justify-content-between align-items-center">
-                      <input
-                        type="date"
-                        className="form-input pl-16 border-0 fs-16 fw-500 p-0 cursor-pointer w-140"
-                        value={detailEdit.booking_date}
-                        onChange={e => handleDateChange(e.target.value)}
-                      />
+                      <div className="booking-date-container">
+                        <input
+                          type="text"
+                          className="form-input border-0 fs-16 fw-500 cursor-pointer"
+                          readOnly
+                          value={detailEdit.booking_date ? new Date(detailEdit.booking_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                          onClick={() => setShowCalendar(!showCalendar)}
+                        />
+                        {showCalendar && (
+                          <div
+                            ref={calendarRef}
+                            className="calendar-popover"
+                          >
+                            <DatePicker.Root
+                              selectionMode="single"
+                              hideOutsideDays
+                              inline
+                              width="fit-content"
+                              value={detailEdit.booking_date ? [parseDate(detailEdit.booking_date)] : []}
+                              onValueChange={(details) => {
+                                if (details.value[0]) {
+                                  const d = details.value[0];
+                                  const dateStr = `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
+
+                                  const selectedDate = new Date(dateStr);
+                                  const today = new Date();
+                                  today.setHours(0, 0, 0, 0);
+
+                                  if (selectedDate < today) {
+                                    alert('Không thể chọn ngày trong quá khứ');
+                                    return;
+                                  }
+
+                                  handleDateChange(dateStr);
+                                  setShowCalendar(false);
+                                }
+                              }}
+                            >
+                              <DatePicker.Content unstyled>
+                                <DatePicker.View view="day">
+                                  <DatePicker.Header />
+                                  <DatePicker.DayTable />
+                                </DatePicker.View>
+                                <DatePicker.View view="month">
+                                  <DatePicker.Header />
+                                  <DatePicker.MonthTable />
+                                </DatePicker.View>
+                                <DatePicker.View view="year">
+                                  <DatePicker.Header />
+                                  <DatePicker.YearTable />
+                                </DatePicker.View>
+                              </DatePicker.Content>
+                            </DatePicker.Root>
+                          </div>
+                        )}
+                      </div>
                       <div className="d-flex align-items-center">
                         <TimePickerInput
                           value={detailEdit.start_time}
@@ -1170,19 +1456,46 @@ function Bookings({ data }) {
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <div className="customer-avatar scale-120">{detailModal.customers?.name?.trim().split(' ').at(-1)[0] || 'A'}</div>
+                      <div className="customer-avatar bg-amber-100 text-amber-800">
+                        {detailEdit.customer_name?.trim().split(' ').at(-1)[0] || 'C'}
+                      </div>
                     </div>
                     <div className="booking-row-content">
-                      <div className="customer-info">
-                        <div className="fs-16 fw-500">{detailModal.customers?.name}</div>
-                        <div className="fs-15 text-gray">{detailModal.customers?.phone}</div>
+                      <div className="customer-info py-0">
+                        <input
+                          type="text"
+                          className="form-input border-0 fs-16 fw-500"
+                          value={detailEdit.customer_search}
+                          onChange={e => handleGenericSearch('customer', e.target.value, true)}
+                          onFocus={() => handleGenericSearch('customer', detailEdit.customer_search, true)}
+                          onBlur={() => setTimeout(() => setSearchSuggestions({ type: null, data: [], loading: false }), 200)}
+                          placeholder="Tên khách hàng hoặc SĐT..."
+                          autoComplete="off"
+                        />
+                        <div className="fs-15 text-gray mt-[-4px]">{detailEdit.customer_phone}</div>
+                        {searchSuggestions.type === 'customer' && searchSuggestions.loading && (
+                          <div className="spinner-icon spinner-icon-right" />
+                        )}
+                        {searchSuggestions.type === 'customer' && searchSuggestions.data.length > 0 && (
+                          <div className="autocomplete-dropdown">
+                            {searchSuggestions.data.map(c => (
+                              <div key={c.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('customer', c, true)}>
+                                <div className="customer-avatar">{c.name.trim().split(' ').at(-1)[0]}</div>
+                                <div className="customer-info">
+                                  <div className="autocomplete-name">{c.name}</div>
+                                  <div className="customer-phone">{c.phone}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <img src={shopIcon} alt="branch" className="w-20" />
+                      <img src={shopIcon} alt="branch" className="w-24" />
                     </div>
                     <div className="booking-row-content">
                       <select
@@ -1201,7 +1514,7 @@ function Bookings({ data }) {
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <div className="customer-avatar scale-120 bg-gray text-muted">{detailModal.employees?.name?.trim().split(' ').at(-1)[0] || 'A'}</div>
+                      <div className="customer-avatar bg-gray text-muted">{detailModal.employees?.name?.trim().split(' ').at(-1)[0] || 'A'}</div>
                     </div>
                     <div className="booking-row-content">
                       <div className="pos-relative">
@@ -1239,7 +1552,7 @@ function Bookings({ data }) {
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <img src={noteIcon} alt="note" className="w-20" />
+                      <img src={noteIcon} alt="note" className="w-24" />
                     </div>
                     <div className="booking-row-content">
                       <input
@@ -1256,7 +1569,7 @@ function Bookings({ data }) {
                 <div className="customer-view">
                   <div className="text-center my-14">
                     <p className='customer-id'>Mã KH: {detailModal.customers?.id}</p>
-                    <div className="customer-avatar w-80 h-80 fs-32 mx-auto mb-16">
+                    <div className="customer-avatar-lg mx-auto mb-16">
                       {detailEdit.customer_name?.trim().split(' ').at(-1)[0].toUpperCase() || 'A'}
                     </div>
                     <h2 className="fs-24 fw-700">{detailModal.customers?.name}</h2>
@@ -1311,8 +1624,8 @@ function Bookings({ data }) {
                     <div className="booking-row-content">
                       <textarea
                         className="form-textarea border-0 fs-16 fw-500 h-60"
-                        value={detailEdit.notes}
-                        onChange={e => setDetailEdit(f => ({ ...f, notes: e.target.value }))}
+                        value={detailEdit.customer_habits}
+                        onChange={e => setDetailEdit(f => ({ ...f, customer_habits: e.target.value }))}
                         placeholder="Ghi chú..."
                       />
                     </div>
@@ -1402,7 +1715,7 @@ function Bookings({ data }) {
                               return (
                                 <div key={s.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('service', s)}>
                                   <div className="service-icon-dot sm" style={{ background: s.color || '#F8F3EC' }}></div>
-                                  <div className="customer-info">
+                                  <div className="customer-info py-0">
                                     <div className="autocomplete-name">{s.name}</div>
                                     <div className="customer-phone">{formatPrice(s.price)}</div>
                                   </div>
@@ -1513,7 +1826,7 @@ function Bookings({ data }) {
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
                       {customerView === 'selected' || customerView === 'creating' ? (
-                        <div className="customer-avatar customer-avatar-selected">{bookForm.customer_name?.trim().split(' ').at(-1)[0].toUpperCase() || 'T'}</div>
+                        <div className="customer-avatar customer-avatar-selected">{bookForm.customer_name?.trim().split(' ').at(-1)[0].toUpperCase() || 'A'}</div>
                       ) : (
                         <img src={userIcon} alt="user" />
                       )}
@@ -1561,7 +1874,7 @@ function Bookings({ data }) {
                       )}
 
                       {customerView === 'selected' && (
-                        <div className="customer-info" onClick={() => setCustomerView('searching')}>
+                        <div className="customer-info py-0" onClick={() => setCustomerView('searching')}>
                           <div className="booking-row-title">{bookForm.customer_name}</div>
                           <div className="customer-phone">{bookForm.customer_phone}</div>
                         </div>
@@ -1640,8 +1953,8 @@ function Bookings({ data }) {
                 </div>
 
                 <div className="modal-footer">
-                  <button type="submit" className="btn btn-primary btn-submit-booking">
-                    Tạo
+                  <button type="submit" className="btn btn-primary btn-submit-booking" disabled={isCreating}>
+                    {isCreating ? 'Đang Tạo...' : 'Tạo'}
                   </button>
                 </div>
               </form>
@@ -1649,6 +1962,51 @@ function Bookings({ data }) {
           </div >
         )
       }
+
+      {/* Drag & Drop Confirmation Popup */}
+      {dragConfirm && (
+        <div className="modal-overlay drag-confirm-overlay" onClick={handleDragCancel}>
+          <div className="drag-confirm-popup" onClick={e => e.stopPropagation()}>
+            <div className="drag-confirm-header">
+              <h3 className="drag-confirm-title">Xác nhận thay đổi?</h3>
+              <button className="modal-close" onClick={handleDragCancel}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path d="M19 5L5 19" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <path d="M5 5L19 19" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
+                </svg>
+              </button>
+            </div>
+            <div className="drag-confirm-body">
+              <div className="drag-confirm-label">Từ:</div>
+              <div className="drag-confirm-row">
+                <div className="drag-confirm-time-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                </div>
+                <span className="drag-confirm-time">{dragConfirm.fromTime}</span>
+                <div className="drag-confirm-staff-badge">
+                  <span className="drag-confirm-staff-initial">{dragConfirm.fromStaff?.trim().split(' ').at(-1)?.[0]?.toUpperCase() || 'A'}</span>
+                  <span className="drag-confirm-staff-name">{dragConfirm.fromStaff}</span>
+                </div>
+              </div>
+              <div className="drag-confirm-label">Thành:</div>
+              <div className="drag-confirm-row">
+                <div className="drag-confirm-time-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                </div>
+                <span className="drag-confirm-time">{dragConfirm.toTime}</span>
+                <div className="drag-confirm-staff-badge">
+                  <span className="drag-confirm-staff-initial">{dragConfirm.toStaff?.trim().split(' ').at(-1)?.[0]?.toUpperCase() || 'A'}</span>
+                  <span className="drag-confirm-staff-name">{dragConfirm.toStaff}</span>
+                </div>
+              </div>
+            </div>
+            <div className="drag-confirm-actions">
+              <button className="drag-confirm-cancel" onClick={handleDragCancel}>Hủy, giữ nguyên</button>
+              <button className="drag-confirm-submit" onClick={handleDragConfirm}>Thay Đổi</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }
