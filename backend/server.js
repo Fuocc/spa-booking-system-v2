@@ -10,7 +10,8 @@ const PORT = process.env.PORT || 3000;
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://yoi-dashboard-v2.netlify.app'
+  /\.netlify\.app$/,
+  'https://spa-booking-system-v2.netlify.app/'
 ];
 
 const corsOptions = {

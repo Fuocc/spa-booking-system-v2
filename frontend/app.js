@@ -531,8 +531,9 @@ async function handleSubmit(e) {
       throw new Error(err.error || 'Booking failed');
     }
 
-    // Success
+    // Success — save booking time for anti-spam tracking
     saveCustomerToStorage();
+    localStorage.setItem('lastBookingTime', new Date().toISOString());
     $form.style.display = 'none';
     document.getElementById('steps-indicator').style.display = 'none';
     $successMessage.style.display = 'block';

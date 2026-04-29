@@ -830,12 +830,12 @@ function Bookings({ data }) {
       employee_search: booking.employees?.name || '',
       customer_search: booking.customers?.name || '',
       notes: booking.notes || '',
+      internal_note: booking.internal_note || '',
       customer_name: booking.customers?.name || '',
       customer_id: booking.customers?.id || '',
       customer_phone: booking.customers?.phone || '',
       customer_email: booking.customers?.email || '',
       customer_habits: booking.customers?.habits || ''
-
     });
 
     setDetailTab('schedule');
@@ -1099,7 +1099,7 @@ function Bookings({ data }) {
                     return (
                       <div
                         key={b.id}
-                        className={`cal-booking-card-wrapper${cardDrag && cardDrag.booking.id === b.id ? ' is-original-placeholder' : ''}`}
+                        className={`cal-booking-card-wrapper${cardDrag && cardDrag.booking.id === b.id ? ' is-original-placeholder' : ''}${b.status === 'pending' && b.internal_note ? ' is-spam-warning' : ''}`}
                         style={{
                           position: 'absolute',
                           top: `${top}px`,
@@ -1168,7 +1168,7 @@ function Bookings({ data }) {
                         <div
                           className="cal-booking-card"
                           style={{
-                            height: `${cardDrag.heightPx}px`,
+                            maxHeight: `${cardDrag.heightPx}px`,
                             backgroundColor: colors.bg,
                             borderLeft: `4px solid ${colors.border}`,
                             color: colors.text,
@@ -1248,7 +1248,7 @@ function Bookings({ data }) {
                   bookings
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map(b => (
-                      <tr key={b.id} onClick={() => handleOpenDetail(b)} className="cursor-pointer">
+                      <tr key={b.id} onClick={() => handleOpenDetail(b)} className={`cursor-pointer${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}`}>
                         <td>
                           <div className="fw-600">{b.customers?.name || '-'}</div>
                           <div className="fs-12 text-muted">{b.customers?.phone}</div>
@@ -1258,7 +1258,10 @@ function Bookings({ data }) {
                         <td>{new Date(b.booking_date + 'T00:00:00').toLocaleDateString('vi-VN')}</td>
                         <td>{formatTime(b.start_time)} - {formatTime(b.end_time)}</td>
                         <td>{b.employees?.name || '-'}</td>
-                        <td>{b.notes || '-'}</td>
+                        <td>
+                          {b.notes || '-'}
+                          {b.internal_note && <div className="fs-11 text-warning-orange mt-2">{b.internal_note}</div>}
+                        </td>
                         <td>
                           <span className={`badge badge-${b.status}`}>{b.status}</span>
                         </td>
@@ -1329,6 +1332,12 @@ function Bookings({ data }) {
             </div>
 
             <div className="modal-body pt-0">
+              {/* Anti-spam warning banner */}
+              {detailEdit.internal_note && (
+                <div className="anti-spam-alert">
+                  <span className="anti-spam-alert-text">{detailEdit.internal_note}</span>
+                </div>
+              )}
               {detailTab === 'schedule' ? (
                 <div className="detail-view">
                   <div className="booking-row no-hover">

@@ -520,9 +520,10 @@
   border-radius: 6px;
   font-size: 14px;
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   overflow: hidden;
+  min-height: 100px;
 }
 
 .cal-booking-time {
@@ -1012,4 +1013,77 @@
 .btn-submit-booking:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ---- Anti-Spam Warning Styles ---- */
+.anti-spam-alert {
+  background: linear-gradient(135deg, #fff7ed, #fef3c7);
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: anti-spam-pulse 2s ease-in-out infinite;
+}
+
+@keyframes anti-spam-pulse {
+
+  0%,
+  100% {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+
+  50% {
+    border-color: #d97706;
+    box-shadow: 0 0 8px 0 rgba(245, 158, 11, 0.15);
+  }
+}
+
+.anti-spam-alert-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #92400e;
+  line-height: 1.6;
+}
+
+/* List view: spam warning row highlight */
+.row-spam-warning {
+  background-color: #fffbeb !important;
+  border-left: 3px solid #f59e0b;
+}
+
+.row-spam-warning:hover {
+  background-color: #fef3c7 !important;
+}
+
+.text-warning-orange {
+  color: #d97706;
+  font-weight: 500;
+}
+
+/* Calendar card: pending status with internal_note gets pulsing border */
+.cal-booking-card-wrapper.is-spam-warning .cal-booking-card {
+  animation: card-spam-glow 2.5s ease-in-out infinite;
+}
+
+@keyframes card-spam-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  50% {
+    box-shadow: 0 2px 12px rgba(245, 158, 11, 0.3);
+  }
+}
+
+/* Badge pending styling enhancement */
+.badge-pending {
+  background: #fef3c7;
+  color: #d97706;
+  border: 1px solid #f59e0b;
 }

@@ -401,6 +401,28 @@ router.post('/', async (req, res) => {
       availableBeds.sort((a, b) => (bedBookingCount[a.id] || 0) - (bedBookingCount[b.id] || 0));
       const assignedBed = availableBeds[0];
 
+      // --- Anti-Spam Check: query recent bookings by same phone in last 30 min ---
+      let bookingStatus = 'confirmed';
+      let internalNote = null;
+
+      try {
+        const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const { data: recentBookings, error: recentErr } = await supabase
+          .from('bookings')
+          .select('id, created_at, customers!inner(phone)')
+          .eq('customers.phone', customer_phone)
+          .gte('created_at', thirtyMinAgo);
+
+        if (!recentErr && recentBookings && recentBookings.length > 0) {
+          bookingStatus = 'pending';
+          internalNote = `⚠️ Khách hàng ${customer_phone} đã có ${recentBookings.length} đơn trong 30 phút qua. Vui lòng xác nhận qua điện thoại.`;
+          console.log(`🔶 Anti-spam triggered for phone ${customer_phone}: ${recentBookings.length} recent booking(s)`);
+        }
+      } catch (spamCheckErr) {
+        // Don't block booking if spam check fails, just log
+        console.error('Anti-spam check error:', spamCheckErr.message);
+      }
+
       // Create booking row
       const insertPayload = {
         customer_id: customer.id,
@@ -412,9 +434,10 @@ router.post('/', async (req, res) => {
         booking_date,
         start_time,
         end_time,
-        status: 'confirmed',
+        status: bookingStatus,
         total_price: price,
-        notes: notes || null
+        notes: notes || null,
+        internal_note: internalNote
       };
 
       const { data: booking, error: bookErr } = await supabase
@@ -437,7 +460,8 @@ router.post('/', async (req, res) => {
     const result = createdBookings.length === 1 ? createdBookings[0] : createdBookings;
 
     // Fire webhooks async (keep your old logic)
-    fireWebhooks('booking.confirmed', createdBookings).catch(err =>
+    const webhookEvent = createdBookings.some(b => b.status === 'pending') ? 'booking.pending' : 'booking.confirmed';
+    fireWebhooks(webhookEvent, createdBookings).catch(err =>
       console.error('Webhook fire error:', err.message)
     );
 
