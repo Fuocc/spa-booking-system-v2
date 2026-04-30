@@ -1093,7 +1093,6 @@ function Bookings({ data }) {
                     const endMin = timeToMinutes(b.end_time);
                     const top = (startMin - OPEN_HOUR * 60) / 60 * 100;
                     const height = (endMin - startMin) / 60 * 100;
-                    const bufferHeight = (bufferTime / 60) * 100;
                     const colors = STATUS_COLORS[b.status] || STATUS_COLORS.confirmed;
 
                     return (
@@ -1115,34 +1114,15 @@ function Bookings({ data }) {
                             backgroundColor: colors.bg,
                             borderLeft: `4px solid ${colors.border}`,
                             color: colors.text,
-                            marginBottom: 0,
-                            borderRadius: bufferTime > 0 ? '8px 8px 0 0' : '8px'
                           }}
+
                         >
                           <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
                           <div className="cal-booking-name">{b.customers?.name}</div>
                           <div className="cal-booking-service">{b.services?.name} - {b.services?.duration_minutes}p</div>
                           {height > 40 && <div className="cal-booking-notes">{b.notes ? `Ghi chú: ${b.notes}` : null}</div>}
                         </div>
-                        {bufferTime > 0 && (
-                          <div
-                            className="cal-booking-buffer"
-                            style={{
-                              height: `${bufferHeight}px`,
-                              background: `repeating-linear-gradient(45deg, ${colors.bg}, ${colors.bg} 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)`,
-                              borderLeft: `4px solid ${colors.border}44`,
-                              borderRadius: '0 0 8px 8px',
-                              fontSize: '10px',
-                              padding: '2px 8px',
-                              color: colors.text,
-                              opacity: 0.8,
-                              display: 'flex',
-                              alignItems: 'center'
-                            }}
-                          >
-                            +{bufferTime}m
-                          </div>
-                        )}
+
                       </div>
                     );
                   })}
@@ -1153,7 +1133,6 @@ function Bookings({ data }) {
                     const colors = STATUS_COLORS[b.status] || STATUS_COLORS.confirmed;
                     const ghostStart = convertYToTime(cardDrag.currentTop);
                     const ghostEnd = convertYToTime(cardDrag.currentTop + cardDrag.heightPx);
-                    const bufferHeight = (bufferTime / 60) * 100;
 
                     return (
                       <div
@@ -1172,25 +1151,13 @@ function Bookings({ data }) {
                             backgroundColor: colors.bg,
                             borderLeft: `4px solid ${colors.border}`,
                             color: colors.text,
-                            borderRadius: bufferTime > 0 ? '8px 8px 0 0' : '8px'
                           }}
                         >
                           <div className="cal-booking-time">{ghostStart} - {ghostEnd}</div>
                           <div className="cal-booking-name">{b.customers?.name}</div>
                           <div className="cal-booking-service">{b.services?.name}</div>
                         </div>
-                        {bufferTime > 0 && (
-                          <div
-                            className="cal-booking-buffer"
-                            style={{
-                              height: `${bufferHeight}px`,
-                              background: `repeating-linear-gradient(45deg, ${colors.bg}, ${colors.bg} 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)`,
-                              borderLeft: `4px solid ${colors.border}44`,
-                              borderRadius: '0 0 8px 8px',
-                              opacity: 0.8
-                            }}
-                          />
-                        )}
+
                       </div>
                     );
                   })()}

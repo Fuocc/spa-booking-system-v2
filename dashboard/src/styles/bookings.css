@@ -517,7 +517,7 @@
   padding: 10px;
   background-color: #eff6ff;
   border-left: 4px solid #3b82f6;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   display: flex;
   flex-flow: column;
@@ -543,10 +543,6 @@
   opacity: 0.9;
 }
 
-.cal-booking-buffer {
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
 
 /* ---- Time Slots (Dashboard Booking Modal) ---- */
 .time-slots-grid-modal {
