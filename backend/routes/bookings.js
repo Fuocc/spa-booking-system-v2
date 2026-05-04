@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../supabaseClient');
 
+// Normalize Vietnamese diacritics for Latin search
+const normalize = (str) => (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 /**
  * GET /api/bookings
  * Query params: branch_id, date, status
@@ -328,13 +331,15 @@ router.post('/', async (req, res) => {
     // 7) Create bookings for each guest (auto assign employee/bed)
     const createdBookings = [];
 
-    // 7.0) Load buffer time from settings
-    const { data: settingsData } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('key', 'buffer_time')
-      .single();
-    const bufferTime = settingsData ? parseInt(settingsData.value) : 15;
+    // 7.0) Load settings (buffer time and tour order)
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    const settings = (settingsData || []).reduce((acc, curr) => {
+      acc[curr.key] = curr.value;
+      return acc;
+    }, {});
+
+    const bufferTime = parseInt(settings.buffer_time) || 15;
+    const tourOrder = settings[`tour_order_${branch_id}`] || [];
 
     for (let g = 0; g < guestCount; g++) {
       const busyEmployeeIds = new Set();
@@ -358,14 +363,15 @@ router.post('/', async (req, res) => {
         return res.status(409).json({ error: 'No employees available for this time slot' });
       }
 
-      // booking count for fairness
-      const employeeBookingCount = {};
-      for (const emp of employees) employeeBookingCount[emp.id] = 0;
-      for (const booking of allRelevantBookings) {
-        if (employeeBookingCount[booking.employee_id] !== undefined) employeeBookingCount[booking.employee_id]++;
-      }
-
-      availableEmployees.sort((a, b) => (employeeBookingCount[a.id] || 0) - (employeeBookingCount[b.id] || 0));
+      // Sort by Tour Order from Settings
+      availableEmployees.sort((a, b) => {
+        const idxA = tourOrder.indexOf(a.id);
+        const idxB = tourOrder.indexOf(b.id);
+        if (idxA === -1 && idxB === -1) return 0;
+        if (idxA === -1) return 1;
+        if (idxB === -1) return -1;
+        return idxA - idxB;
+      });
 
       let assignedEmployee = availableEmployees[0];
 
@@ -402,25 +408,30 @@ router.post('/', async (req, res) => {
       const assignedBed = availableBeds[0];
 
       // --- Anti-Spam Check: query recent bookings by same phone in last 30 min ---
+      // Skip for "Khách Lạ" (walk-in) customers with placeholder phone numbers
       let bookingStatus = 'confirmed';
       let internalNote = null;
 
-      try {
-        const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-        const { data: recentBookings, error: recentErr } = await supabase
-          .from('bookings')
-          .select('id, created_at, customers!inner(phone)')
-          .eq('customers.phone', customer_phone)
-          .gte('created_at', thirtyMinAgo);
+      const isWalkIn = normalize(customer_name).includes('khach la') && /^0+$/.test(customer_phone);
 
-        if (!recentErr && recentBookings && recentBookings.length > 0) {
-          bookingStatus = 'pending';
-          internalNote = `⚠️ Khách hàng ${customer_phone} đã có ${recentBookings.length} đơn trong 30 phút qua. Vui lòng xác nhận qua điện thoại.`;
-          console.log(`🔶 Anti-spam triggered for phone ${customer_phone}: ${recentBookings.length} recent booking(s)`);
+      if (!isWalkIn) {
+        try {
+          const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+          const { data: recentBookings, error: recentErr } = await supabase
+            .from('bookings')
+            .select('id, created_at, customers!inner(phone)')
+            .eq('customers.phone', customer_phone)
+            .gte('created_at', thirtyMinAgo);
+
+          if (!recentErr && recentBookings && recentBookings.length > 0) {
+            bookingStatus = 'pending';
+            internalNote = `⚠️ Khách hàng ${customer_phone} đã có ${recentBookings.length} đơn trong 30 phút qua. Vui lòng xác nhận qua điện thoại.`;
+            console.log(`🔶 Anti-spam triggered for phone ${customer_phone}: ${recentBookings.length} recent booking(s)`);
+          }
+        } catch (spamCheckErr) {
+          // Don't block booking if spam check fails, just log
+          console.error('Anti-spam check error:', spamCheckErr.message);
         }
-      } catch (spamCheckErr) {
-        // Don't block booking if spam check fails, just log
-        console.error('Anti-spam check error:', spamCheckErr.message);
       }
 
       // Create booking row
@@ -497,6 +508,32 @@ router.put('/:id/status', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // --- Automatic Tour Rotation ---
+    if (status === 'completed' && data.employee_id && data.branch_id) {
+      const tourKey = `tour_order_${data.branch_id}`;
+      // Get current settings
+      const { data: settingData } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', tourKey)
+        .single();
+
+      if (settingData && Array.isArray(settingData.value)) {
+        let tour = [...settingData.value];
+        const idx = tour.indexOf(data.employee_id);
+        if (idx !== -1) {
+          // Remove from current position and push to the end
+          tour.splice(idx, 1);
+          tour.push(data.employee_id);
+
+          await supabase
+            .from('settings')
+            .upsert({ key: tourKey, value: tour }, { onConflict: 'key' });
+        }
+      }
+    }
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -72,6 +72,30 @@ const STATUS_COLORS = {
   completed: { bg: '#eff6ff', border: '#2563eb', text: '#2563eb' }
 };
 
+const CARD_PALETTE = [
+  '#EDF4EB', // Green
+  '#F1F1EF', // Grey
+  '#F8F3EC', // Beige
+  '#ECF5F8', // Blue
+  '#EEECF8', // Purple
+  '#F8ECF4', // Pink
+  '#FEECEC'  // Red
+];
+
+const getBookingColor = (booking) => {
+  if (booking.status === 'pending' && booking.internal_note) {
+    return STATUS_COLORS.pending.bg;
+  }
+  // Stable random index based on ID string or number
+  const idStr = String(booking.id);
+  let hash = 0;
+  for (let i = 0; i < idStr.length; i++) {
+    hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % CARD_PALETTE.length;
+  return CARD_PALETTE[index];
+};
+
 const formatPrice = (v) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v || 0);
 const formatTime = (t) => t ? t.substring(0, 5) : '-';
 const normalize = (str) => (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -109,6 +133,7 @@ function Bookings({ data }) {
   const [detailModal, setDetailModal] = useState(null);
   const [detailEdit, setDetailEdit] = useState(null);
   const [detailSaving, setDetailSaving] = useState(false);
+  const [detailCustomerView, setDetailCustomerView] = useState('selected'); // 'selected', 'searching', 'creating'
   const [employeesByBranch, setEmployeesByBranch] = useState([]); // for dropdown in detail edit
   const [bookForm, setBookForm] = useState({
     branch_id: '', service_id: '', num_guests: 1,
@@ -135,6 +160,7 @@ function Bookings({ data }) {
   const [dragInfo, setDragInfo] = useState(null); // { startY, currentY, staffId, staffName, columnEl }
   const [hoverInfo, setHoverInfo] = useState(null); // { staffId, y, colLeft, colWidth }
   const [bufferTime, setBufferTime] = useState(15);
+  const [sysSettings, setSysSettings] = useState({});
   const calendarRef = useRef(null);
   const moreMenuRef = useRef(null);
   const searchTimeoutRef = useRef(null);
@@ -312,6 +338,7 @@ function Bookings({ data }) {
       const [b, s, settingsData] = await Promise.all([getBranches(), getServices(), getSettings()]);
       setBranches(b);
       setServices(s);
+      setSysSettings(settingsData || {});
 
       if (settingsData && settingsData.buffer_time) {
         setBufferTime(parseInt(settingsData.buffer_time) || 0);
@@ -329,15 +356,34 @@ function Bookings({ data }) {
     setLoading(true);
     try {
       const dayStr = toDateStr(currentDate);
-      // Fetch bookings, employees, AND schedules for the single day
-      const [bookingsData, employeesData, schedulesData] = await Promise.all([
+      // Fetch bookings, employees, schedules AND latest settings
+      const [bookingsData, employeesData, schedulesData, settingsData] = await Promise.all([
         getBookingsRange(dayStr, dayStr, filterBranch || undefined),
         filterBranch ? getEmployees(filterBranch) : Promise.resolve([]),
-        getEmployeeSchedules({ date_from: dayStr, date_to: dayStr })
+        getEmployeeSchedules({ date_from: dayStr, date_to: dayStr }),
+        getSettings()
       ]);
 
+      setSysSettings(settingsData || {});
       setBookings(bookingsData.filter(b => b.status !== 'cancelled'));
-      setEmployees(employeesData.filter(e => e.is_active));
+
+      // Sort employees by tour order if exists
+      const tourKey = `tour_order_${filterBranch}`;
+      const savedOrder = settingsData ? settingsData[tourKey] : null;
+
+      let sortedEmployees = employeesData.filter(e => e.is_active);
+      if (savedOrder && Array.isArray(savedOrder)) {
+        sortedEmployees.sort((a, b) => {
+          const idxA = savedOrder.indexOf(a.id);
+          const idxB = savedOrder.indexOf(b.id);
+          if (idxA === -1 && idxB === -1) return 0;
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
+      }
+
+      setEmployees(sortedEmployees);
       setEmployeeSchedules(schedulesData);
     } catch (err) {
       console.error(err);
@@ -443,7 +489,10 @@ function Bookings({ data }) {
   const handleDragConfirm = async () => {
     if (!dragConfirm) return;
     try {
-      await updateBooking(dragConfirm.booking.id, {
+      const bk = dragConfirm.booking;
+      await updateBooking(bk.id, {
+        service_id: bk.service_id || bk.services?.id,
+        branch_id: bk.branch_id || bk.branches?.id,
         employee_id: dragConfirm.toStaffId,
         start_time: dragConfirm.newStart,
         end_time: dragConfirm.newEnd,
@@ -561,7 +610,7 @@ function Bookings({ data }) {
     setter(prev => ({
       ...prev,
       [field]: val,
-      ...(type === 'customer' ? { customer_id: '', customer_search: val } : {})
+      ...(type === 'customer' ? { customer_id: '', customer_search: val, customer_phone: '' } : {})
     }));
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -611,7 +660,8 @@ function Bookings({ data }) {
           }
           results = grouped;
         } else if (type === 'employee') {
-          const emps = await getEmployees(currentState.branch_id || undefined);
+          const emps = await getEmployees(currentState.branch_id || filterBranch);
+          let active = emps.filter(e => e.is_active);
 
           if (currentState.booking_date) {
             // Filter by schedule
@@ -623,14 +673,21 @@ function Bookings({ data }) {
               .filter(s => !s.is_day_off)
               .map(s => s.employee_id);
 
-            results = emps.filter(e =>
-              e.is_active &&
-              availableIds.includes(e.id) &&
-              normalize(e.name).includes(searchVal)
-            );
-          } else {
-            results = emps.filter(e => e.is_active && normalize(e.name).includes(searchVal));
+            active = active.filter(e => availableIds.includes(e.id));
           }
+
+          // Sort by tour order
+          const tourKey = `tour_order_${currentState.branch_id || filterBranch}`;
+          const tourOrder = sysSettings[tourKey] || [];
+
+          results = active.sort((a, b) => {
+            const idxA = tourOrder.indexOf(a.id);
+            const idxB = tourOrder.indexOf(b.id);
+            if (idxA === -1 && idxB === -1) return 0;
+            if (idxA === -1) return 1;
+            if (idxB === -1) return -1;
+            return idxA - idxB;
+          }).filter(e => normalize(e.name).includes(searchVal));
         }
         setSearchSuggestions({ type, data: results, loading: false });
       } catch (err) {
@@ -654,15 +711,18 @@ function Bookings({ data }) {
           customer_phone: isPhone ? query : ''
         }));
         if (!isDetail) setCustomerView('creating');
+        else setDetailCustomerView('creating');
       } else {
         setter(prev => ({
           ...prev,
           customer_id: item.id,
           customer_name: item.name,
           customer_phone: item.phone || '',
-          customer_email: item.email || ''
+          customer_email: item.email || '',
+          customer_search: item.name
         }));
         if (!isDetail) setCustomerView('selected');
+        else setDetailCustomerView('selected');
       }
     } else if (type === 'service') {
       if (isDetail) {
@@ -779,7 +839,7 @@ function Bookings({ data }) {
         end_time: detailEdit.end_time,
         employee_id: detailEdit.employee_id,
         notes: detailEdit.notes,
-        customer_id: detailEdit.customer_id
+        customer_id: detailEdit.customer_id || (detailModal.customer_id || detailModal.customers?.id)
       };
 
       const updated = await updateBooking(detailModal.id, bookingUpdate);
@@ -838,6 +898,7 @@ function Bookings({ data }) {
       customer_habits: booking.customers?.habits || ''
     });
 
+    setDetailCustomerView('selected');
     setDetailTab('schedule');
     setShowDetailMore(false);
     loadEmployeesForDetail(booking.branch_id, booking.booking_date);
@@ -926,6 +987,23 @@ function Bookings({ data }) {
       detailEdit.customer_id !== (detailModal.customer_id || detailModal.customers?.id || '')
     );
   }, [detailModal, detailEdit]);
+
+  const handleStatusUpdate = async (status) => {
+    if (!detailModal) return;
+    try {
+      setDetailSaving(true);
+      const { updateBookingStatus } = await import('../api'); // Assuming it exists or use updateBooking
+      // If updateBookingStatus doesn't exist, we can use updateBooking with just status
+      await updateBooking(detailModal.id, { status });
+      notify('Đã cập nhật trạng thái!');
+      setDetailModal(null);
+      loadBookings();
+    } catch (err) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setDetailSaving(false);
+    }
+  };
 
   // Date options
   const dateOptions = [];
@@ -1093,7 +1171,8 @@ function Bookings({ data }) {
                     const endMin = timeToMinutes(b.end_time);
                     const top = (startMin - OPEN_HOUR * 60) / 60 * 100;
                     const height = (endMin - startMin) / 60 * 100;
-                    const colors = STATUS_COLORS[b.status] || STATUS_COLORS.confirmed;
+                    const cardBg = getBookingColor(b);
+                    const textColor = '#555555';
 
                     return (
                       <div
@@ -1110,19 +1189,16 @@ function Bookings({ data }) {
                         <div
                           className="cal-booking-card"
                           style={{
-                            height: `${height}px`,
-                            backgroundColor: colors.bg,
-                            borderLeft: `4px solid ${colors.border}`,
-                            color: colors.text,
+                            height: `calc(${height}px - 4px)`,
+                            backgroundColor: cardBg,
+                            color: textColor,
                           }}
-
                         >
-                          <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
+                          {b.notes ? <img src={noteIcon} alt='note icon' className="cal-booking-icon" /> : null}
                           <div className="cal-booking-name">{b.customers?.name}</div>
-                          <div className="cal-booking-service">{b.services?.name} - {b.services?.duration_minutes}p</div>
-                          {height > 40 && <div className="cal-booking-notes">{b.notes ? `Ghi chú: ${b.notes}` : null}</div>}
+                          <div className="cal-booking-service">{b.services?.name}</div>
+                          <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
                         </div>
-
                       </div>
                     );
                   })}
@@ -1130,9 +1206,10 @@ function Bookings({ data }) {
                   {/* Card drag ghost */}
                   {cardDrag && cardDrag.currentCol?.getAttribute('data-staff-id') === emp.id && (() => {
                     const b = cardDrag.booking;
-                    const colors = STATUS_COLORS[b.status] || STATUS_COLORS.confirmed;
                     const ghostStart = convertYToTime(cardDrag.currentTop);
                     const ghostEnd = convertYToTime(cardDrag.currentTop + cardDrag.heightPx);
+                    const cardBg = getBookingColor(b);
+                    const textColor = '#555555';
 
                     return (
                       <div
@@ -1147,17 +1224,16 @@ function Bookings({ data }) {
                         <div
                           className="cal-booking-card"
                           style={{
-                            maxHeight: `${cardDrag.heightPx}px`,
-                            backgroundColor: colors.bg,
-                            borderLeft: `4px solid ${colors.border}`,
-                            color: colors.text,
+                            height: `${cardDrag.heightPx}px`,
+                            backgroundColor: cardBg,
+                            color: textColor,
                           }}
                         >
-                          <div className="cal-booking-time">{ghostStart} - {ghostEnd}</div>
+                          {b.notes ? <img src={noteIcon} alt='note icon' className="cal-booking-icon" /> : null}
                           <div className="cal-booking-name">{b.customers?.name}</div>
                           <div className="cal-booking-service">{b.services?.name}</div>
+                          <div className="cal-booking-time">{ghostStart} - {ghostEnd}</div>
                         </div>
-
                       </div>
                     );
                   })()}
@@ -1432,40 +1508,70 @@ function Bookings({ data }) {
 
                   <div className="booking-row no-hover">
                     <div className="booking-row-icon">
-                      <div className="customer-avatar bg-amber-100 text-amber-800">
-                        {detailEdit.customer_name?.trim().split(' ').at(-1)[0] || 'C'}
-                      </div>
+                      {detailCustomerView === 'selected' || detailCustomerView === 'creating' ? (
+                        <div className="customer-avatar customer-avatar-selected">
+                          {detailEdit.customer_name?.trim().split(' ').at(-1)[0].toUpperCase() || 'C'}
+                        </div>
+                      ) : (
+                        <img src={userIcon} alt="user" />
+                      )}
                     </div>
                     <div className="booking-row-content">
-                      <div className="customer-info py-0">
-                        <input
-                          type="text"
-                          className="form-input border-0 fs-16 fw-500"
-                          value={detailEdit.customer_search}
-                          onChange={e => handleGenericSearch('customer', e.target.value, true)}
-                          onFocus={() => handleGenericSearch('customer', detailEdit.customer_search, true)}
-                          onBlur={() => setTimeout(() => setSearchSuggestions({ type: null, data: [], loading: false }), 200)}
-                          placeholder="Tên khách hàng hoặc SĐT..."
-                          autoComplete="off"
-                        />
-                        <div className="fs-15 text-gray mt-[-4px]">{detailEdit.customer_phone}</div>
-                        {searchSuggestions.type === 'customer' && searchSuggestions.loading && (
-                          <div className="spinner-icon spinner-icon-right" />
-                        )}
-                        {searchSuggestions.type === 'customer' && searchSuggestions.data.length > 0 && (
-                          <div className="autocomplete-dropdown">
-                            {searchSuggestions.data.map(c => (
-                              <div key={c.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('customer', c, true)}>
-                                <div className="customer-avatar">{c.name.trim().split(' ').at(-1)[0]}</div>
-                                <div className="customer-info">
-                                  <div className="autocomplete-name">{c.name}</div>
-                                  <div className="customer-phone">{c.phone}</div>
+                      {detailCustomerView === 'selected' && (
+                        <div className="customer-info py-0 cursor-pointer" onClick={() => setDetailCustomerView('searching')}>
+                          <div className="booking-row-title">{detailEdit.customer_name}</div>
+                          <div className="customer-phone">{detailEdit.customer_phone}</div>
+                        </div>
+                      )}
+
+                      {detailCustomerView === 'searching' && (
+                        <div className="pos-relative">
+                          <input
+                            type="text"
+                            className="form-input form-input-search"
+                            autoFocus
+                            value={detailEdit.customer_search}
+                            onChange={e => handleGenericSearch('customer', e.target.value, true)}
+                            onFocus={() => handleGenericSearch('customer', detailEdit.customer_search, true)}
+                            onBlur={() => setTimeout(() => {
+                              if (detailCustomerView !== 'selected' && detailCustomerView !== 'creating' && !detailEdit.customer_search) {
+                                setDetailCustomerView('selected');
+                              }
+                              setSearchSuggestions({ type: null, data: [], loading: false });
+                            }, 200)}
+                            placeholder="Tên khách hàng hoặc SĐT..."
+                            autoComplete="off"
+                          />
+                          {searchSuggestions.type === 'customer' && searchSuggestions.loading && (
+                            <div className="spinner-icon spinner-icon-right" />
+                          )}
+                          {searchSuggestions.type === 'customer' && (
+                            <div className="autocomplete-dropdown">
+                              {searchSuggestions.data.map(c => (
+                                <div key={c.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('customer', c, true)}>
+                                  <div className="customer-avatar">{c.name.trim().split(' ').at(-1)[0]}</div>
+                                  <div className="customer-info">
+                                    <div className="autocomplete-name">{c.name}</div>
+                                    <div className="customer-phone">{c.phone}</div>
+                                  </div>
                                 </div>
+                              ))}
+                              <div className="autocomplete-footer" onMouseDown={() => handleSelectSuggestion('customer', 'new', true)}>
+                                <FiPlus /> Tạo Khách Mới
                               </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {detailCustomerView === 'creating' && (
+                        <div className="new-customer-fields">
+                          <input className="form-input form-input-clean" placeholder="Tên khách"
+                            value={detailEdit.customer_name} onChange={e => setDetailEdit(f => ({ ...f, customer_name: e.target.value }))} />
+                          <input className="form-input phone-input-sm" placeholder="Nhập SĐT"
+                            value={detailEdit.customer_phone} onChange={e => setDetailEdit(f => ({ ...f, customer_phone: e.target.value }))} />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1626,6 +1732,7 @@ function Bookings({ data }) {
                   </div>
                 )}
               </div>
+
               <button
                 className="btn btn-primary btn-save-detail"
                 onClick={handleSaveDetail}
@@ -1691,7 +1798,7 @@ function Bookings({ data }) {
                               return (
                                 <div key={s.id} className="autocomplete-item" onMouseDown={() => handleSelectSuggestion('service', s)}>
                                   <div className="service-icon-dot sm" style={{ background: s.color || '#F8F3EC' }}></div>
-                                  <div className="customer-info py-0">
+                                  <div className="customer-info">
                                     <div className="autocomplete-name">{s.name}</div>
                                     <div className="customer-phone">{formatPrice(s.price)}</div>
                                   </div>

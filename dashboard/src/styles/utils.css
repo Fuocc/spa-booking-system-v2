@@ -326,6 +326,10 @@
   background-color: var(--success, #0d8a3f);
 }
 
+.opacity-50 {
+  opacity: 0.5;
+}
+
 /* ---- Toast Styles ---- */
 
 /* Container chính của Toast - Light Mode */

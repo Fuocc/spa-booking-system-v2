@@ -481,6 +481,7 @@
   height: 10px;
   background-color: #000;
   clip-path: polygon(0% 0%, 0% 100%, 100% 50%);
+  z-index: 999;
 }
 
 .cal-now-badge {
@@ -514,33 +515,46 @@
 }
 
 .cal-booking-card {
-  padding: 10px;
+  padding: 10px 12px;
   background-color: #eff6ff;
-  border-left: 4px solid #3b82f6;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 2px;
   display: flex;
   flex-flow: column;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   overflow: hidden;
-  min-height: 100px;
+  min-height: max-content;
+  position: relative;
+  margin: 2px;
 }
 
 .cal-booking-time {
-  font-weight: 700;
+  font-size: 12px;
+  color: #555555;
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+}
+
+.cal-booking-icon {
+  width: 20px;
+  height: 20px;
+  position: absolute;
+  top: 10px;
+  right: 12px;
 }
 
 .cal-booking-name {
+  font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin: 8px 0 2px;
+  color: #555555;
 }
 
 .cal-booking-service {
-  font-size: 14px;
-  opacity: 0.9;
+  font-size: 12px;
+  color: #555555;
 }
 
 
@@ -1060,21 +1074,63 @@
   font-weight: 500;
 }
 
-/* Calendar card: pending status with internal_note gets pulsing border */
-.cal-booking-card-wrapper.is-spam-warning .cal-booking-card {
-  animation: card-spam-glow 2.5s ease-in-out infinite;
+/* Tour Settings */
+.tour-list {
+  display: flex;
+  flex-direction: column;
 }
 
-@keyframes card-spam-glow {
+.tour-item {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  background: white;
+  cursor: grab;
+  transition: all 0.2s;
+}
 
-  0%,
-  100% {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  }
+.tour-item:hover {
+  background: #f9fafb;
+}
 
-  50% {
-    box-shadow: 0 2px 12px rgba(245, 158, 11, 0.3);
-  }
+.tour-item.dragging {
+  opacity: 0.5;
+  background: #eff6ff;
+  border-left: 4px solid #2563eb;
+}
+
+.tour-item-order {
+  width: 32px;
+  font-weight: 700;
+  color: var(--black);
+  font-size: 14px;
+}
+
+.tour-item-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #475569;
+  margin-right: 16px;
+}
+
+.tour-item-info {
+  flex: 1;
+}
+
+.tour-item-handle {
+  color: #cbd5e1;
+  cursor: grab;
+}
+
+.tour-item:last-child {
+  border-bottom: none;
 }
 
 /* Badge pending styling enhancement */

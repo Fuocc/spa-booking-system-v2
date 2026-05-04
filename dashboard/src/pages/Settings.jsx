@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
-import { FiSave, FiClock, FiSettings, FiZap, FiPlus, FiEdit2, FiTrash2, FiPlay } from 'react-icons/fi';
-import { 
-  getSettings, updateSetting, 
-  getWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook 
+import { FiSave, FiClock, FiSettings, FiZap, FiPlus, FiEdit2, FiTrash2, FiPlay, FiList } from 'react-icons/fi';
+import {
+  getSettings, updateSetting,
+  getWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook,
+  getBranches, getEmployees
 } from '../api';
 import { toast } from 'react-toastify';
 import '../styles/webhooks.css';
 
 function Settings() {
-  const [activeTab, setActiveTab] = useState('general'); // 'general' or 'webhooks'
-  
+  const [activeTab, setActiveTab] = useState('general'); // 'general', 'webhooks', or 'tour'
+
   // General Settings State
   const [settings, setSettings] = useState({
     buffer_time: 15
@@ -25,6 +26,14 @@ function Settings() {
   const [webhookForm, setWebhookForm] = useState({ name: '', url: '', event: 'booking.confirmed', is_active: true });
   const [testResult, setTestResult] = useState(null);
 
+  // Tour State
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('');
+  const [tourStaff, setTourStaff] = useState([]);
+  const [initialTourOrder, setInitialTourOrder] = useState([]);
+  const [tourLoading, setTourLoading] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+
   useEffect(() => {
     loadSettings();
   }, []);
@@ -32,6 +41,9 @@ function Settings() {
   useEffect(() => {
     if (activeTab === 'webhooks') {
       loadWebhooks();
+    }
+    if (activeTab === 'tour') {
+      loadTourData();
     }
   }, [activeTab]);
 
@@ -139,6 +151,91 @@ function Settings() {
     }
   };
 
+  // Tour Functions
+  const loadTourData = async () => {
+    setTourLoading(true);
+    try {
+      const bData = await getBranches();
+      setBranches(bData);
+      if (bData.length > 0 && !selectedBranch) {
+        setSelectedBranch(bData[0].id);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTourLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedBranch && activeTab === 'tour') {
+      loadBranchStaff(selectedBranch);
+    }
+  }, [selectedBranch, activeTab]);
+
+  const loadBranchStaff = async (branchId) => {
+    setTourLoading(true);
+    try {
+      const staff = await getEmployees(branchId);
+      const activeStaff = staff.filter(e => e.is_active);
+
+      // Try to load existing order from settings
+      const tourKey = `tour_order_${branchId}`;
+      const savedOrder = settings[tourKey]; // settings are already loaded
+
+      if (savedOrder && Array.isArray(savedOrder)) {
+        // Sort active staff by saved order
+        const sorted = [...activeStaff].sort((a, b) => {
+          const idxA = savedOrder.indexOf(a.id);
+          const idxB = savedOrder.indexOf(b.id);
+          if (idxA === -1 && idxB === -1) return 0;
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
+        setTourStaff(sorted);
+        setInitialTourOrder(sorted.map(s => s.id));
+      } else {
+        setTourStaff(activeStaff);
+        setInitialTourOrder(activeStaff.map(s => s.id));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTourLoading(false);
+    }
+  };
+
+  const handleDragStart = (index) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    const newStaff = [...tourStaff];
+    const item = newStaff.splice(draggedIndex, 1)[0];
+    newStaff.splice(index, 0, item);
+
+    setTourStaff(newStaff);
+    setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
+  const saveTourOrder = async () => {
+    if (!selectedBranch) return;
+    const tourKey = `tour_order_${selectedBranch}`;
+    const orderIds = tourStaff.map(s => s.id);
+    await handleSaveSetting(tourKey, orderIds);
+    setInitialTourOrder(orderIds);
+  };
+
+  const isTourModified = JSON.stringify(tourStaff.map(s => s.id)) !== JSON.stringify(initialTourOrder);
+
   if (loading && activeTab === 'general') {
     return (
       <div className="d-flex align-items-center justify-content-center" style={{ minHeight: '200px' }}>
@@ -169,6 +266,12 @@ function Settings() {
         >
           Webhooks
         </button>
+        <button
+          className={`detail-tab-btn tab-btn ${activeTab === 'tour' ? 'active' : ''}`}
+          onClick={() => setActiveTab('tour')}
+        >
+          Xếp Tour
+        </button>
       </div>
 
       <div className="settings-content">
@@ -180,7 +283,7 @@ function Settings() {
                 <h3 className="card-title">Thời gian chờ (Buffer Time)</h3>
               </div>
               <div className="card-body">
-                <p className="fs-14 text-gray mb-16">
+                <p className="fs-14 text-muted mb-16">
                   Khoảng thời gian nghỉ giữa các ca làm việc (phút). Thời gian này sẽ được cộng thêm vào tổng thời gian dịch vụ khi tính toán lịch trống cho khách hàng đặt online.
                 </p>
                 <div className="d-flex align-items-center gap-12">
@@ -192,7 +295,7 @@ function Settings() {
                     min="0"
                     step="5"
                   />
-                  <span className="fs-14 text-gray">phút</span>
+                  <span className="fs-14 text-muted">phút</span>
                   <button
                     className="btn btn-primary ml-auto"
                     onClick={() => handleSaveSetting('buffer_time', settings.buffer_time)}
@@ -211,7 +314,7 @@ function Settings() {
                 <h3 className="card-title">Cấu hình khác</h3>
               </div>
               <div className="card-body">
-                <p className="fs-14 text-gray">
+                <p className="fs-14 text-muted">
                   Các cài đặt nâng cao khác sẽ được cập nhật thêm tại đây.
                 </p>
               </div>
@@ -228,7 +331,7 @@ function Settings() {
                 </div>
                 <div>
                   <div className="fw-600 mb-4">Tích hợp Zapier / Automation</div>
-                  <div className="fs-13 text-dark-gray" style={{ lineHeight: 1.6 }}>
+                  <div className="fs-13 text-dark-muted" style={{ lineHeight: 1.6 }}>
                     Gửi dữ liệu lịch hẹn tự động đến các ứng dụng khác thông qua Webhook URL.
                   </div>
                 </div>
@@ -271,7 +374,7 @@ function Settings() {
                         <tr key={w.id}>
                           <td className="fw-600">{w.name}</td>
                           <td>
-                            <code className="fs-12 bg-light-gray rounded-4" style={{ padding: '2px 6px', wordBreak: 'break-all' }}>
+                            <code className="fs-12 bg-light-muted rounded-4" style={{ padding: '2px 6px', wordBreak: 'break-all' }}>
                               {w.url}
                             </code>
                           </td>
@@ -312,14 +415,14 @@ function Settings() {
                 </table>
               </div>
             </div>
-            
+
             <div className="card">
               <div className="card-header">
                 <h3 className="card-title">Payload mẫu</h3>
               </div>
               <div className="card-body">
-                <pre className="fs-12 bg-light-gray p-16 rounded-8 overflow-auto" style={{ lineHeight: 1.5 }}>
-{`{
+                <pre className="fs-12 bg-light-muted p-16 rounded-8 overflow-auto" style={{ lineHeight: 1.5 }}>
+                  {`{
   "event": "booking.confirmed",
   "timestamp": "2026-04-18T10:00:00.000Z",
   "data": {
@@ -330,6 +433,71 @@ function Settings() {
   }
 }`}
                 </pre>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'tour' && (
+          <div className="tour-settings-container">
+            <div className="d-flex justify-content-between align-items-center mb-24">
+              <div>
+                <h3 className="card-title">Thứ tự ưu tiên nhân viên (Tour)</h3>
+                <p className="fs-14 text-muted mt-4">Kéo thả để sắp xếp thứ tự ưu tiên nhận khách trong ngày.</p>
+              </div>
+              <div className="d-flex gap-12 align-items-center">
+                <select
+                  className="form-select max-w-200"
+                  value={selectedBranch}
+                  onChange={e => setSelectedBranch(e.target.value)}
+                >
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <button
+                  className={`btn btn-primary ${saving || !isTourModified ? 'opacity-50' : null}`}
+                  onClick={saveTourOrder}
+                  disabled={saving || !isTourModified}
+                >
+                  <FiSave className="mr-8" />
+                  {saving ? 'Đang lưu...' : 'Lưu thứ tự'}
+                </button>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-body p-0">
+                {tourLoading ? (
+                  <div className="text-center p-40 text-muted p-16">Đang tải danh sách nhân viên...</div>
+                ) : tourStaff.length === 0 ? (
+                  <div className="text-center p-40 text-muted">Không có nhân viên nào tại chi nhánh này.</div>
+                ) : (
+                  <div className="tour-list">
+                    {tourStaff.map((s, idx) => (
+                      <div
+                        key={s.id}
+                        className={`tour-item ${draggedIndex === idx ? 'dragging' : ''}`}
+                        draggable
+                        onDragStart={() => handleDragStart(idx)}
+                        onDragOver={(e) => handleDragOver(e, idx)}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <div className="tour-item-order">{idx + 1}</div>
+                        <div className="tour-item-avatar">
+                          {s.name.trim().split(' ').at(-1)[0]}
+                        </div>
+                        <div className="tour-item-info">
+                          <div className="fw-600">{s.name}</div>
+                          <div className="fs-12 text-muted">{s.phone || 'Chưa có SĐT'}</div>
+                        </div>
+                        <div className="tour-item-handle">
+                          <FiList size={18} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
