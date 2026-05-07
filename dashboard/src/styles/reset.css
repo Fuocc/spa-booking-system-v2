@@ -66,8 +66,7 @@ textarea {
 }
 
 html {
-  /* Support safe areas for PWA on iOS */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Safe areas are handled manually in layout components for better control */
 }
 
 /* Prevent pull-to-refresh in standalone mode */
