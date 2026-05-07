@@ -35,6 +35,14 @@ function Services() {
   const colorPickerRef = useRef(null);
   const categoryRef = useRef(null);
 
+  // Responsive
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+
   useEffect(() => {
     loadServices();
 
@@ -143,56 +151,88 @@ function Services() {
       </div>
 
       <div className="card">
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Màu</th>
-                <th>Tên dịch vụ</th>
-                <th>Nhóm</th>
-                <th>Thời lượng</th>
-                <th>Giá</th>
-                <th>Trạng thái</th>
-                <th>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.length === 0 ? (
+        {!isMobile ? (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan="7">
-                    <div className="empty-state">
-                      <h4>Chưa có dịch vụ</h4>
-                    </div>
-                  </td>
+                  <th>Màu</th>
+                  <th>Tên dịch vụ</th>
+                  <th>Nhóm</th>
+                  <th>Thời lượng</th>
+                  <th>Giá</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
                 </tr>
-              ) : (
-                services.map(svc => (
-                  <tr key={svc.id}>
-                    <td>
-                      <div className="service-color-dot" style={{ background: svc.color || '#ddd' }}></div>
-                    </td>
-                    <td className="service-text-bold">{svc.name}</td>
-                    <td><span className="badge badge-info">{svc.category || null}</span></td>
-                    <td>{svc.duration_minutes} phút</td>
-                    <td className="service-text-bold">{formatPrice(svc.price)}</td>
-                    <td>
-                      <span className={`badge ${svc.is_active ? 'badge-active' : 'badge-inactive'}`}>
-                        {svc.is_active ? 'Hoạt động' : 'Ẩn'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="actions-cell">
-                        <button className="btn-icon" onClick={() => openEdit(svc)}><FiEdit2 size={14} /></button>
-                        <button className="btn-icon btn-danger" onClick={() => handleDelete(svc.id)}><FiTrash2 size={14} /></button>
+              </thead>
+              <tbody>
+                {services.length === 0 ? (
+                  <tr>
+                    <td colSpan="7">
+                      <div className="empty-state">
+                        <h4>Chưa có dịch vụ</h4>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  services.map(svc => (
+                    <tr key={svc.id}>
+                      <td>
+                        <div className="service-color-dot" style={{ background: svc.color || '#ddd' }}></div>
+                      </td>
+                      <td className="service-text-bold">{svc.name}</td>
+                      <td><span className="badge badge-info">{svc.category || null}</span></td>
+                      <td>{svc.duration_minutes} phút</td>
+                      <td className="service-text-bold">{formatPrice(svc.price)}</td>
+                      <td>
+                        <span className={`badge ${svc.is_active ? 'badge-active' : 'badge-inactive'}`}>
+                          {svc.is_active ? 'Hoạt động' : 'Ẩn'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="actions-cell">
+                          <button className="btn-icon" onClick={() => openEdit(svc)}><FiEdit2 size={14} /></button>
+                          <button className="btn-icon btn-danger" onClick={() => handleDelete(svc.id)}><FiTrash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="mobile-card-list">
+            {services.length === 0 ? (
+              <div className="empty-state">
+                <h4>Chưa có dịch vụ</h4>
+              </div>
+            ) : (
+              services.map(svc => (
+                <div key={svc.id} className="mobile-card service-card" onClick={() => openEdit(svc)}>
+                  <div className="mobile-card-row">
+                    <div className="service-card-header">
+                      <div className="service-card-color" style={{ background: svc.color || '#ddd' }}></div>
+                      <span className="service-card-name">{svc.name}</span>
+                    </div>
+                    <div className="mobile-card-actions" onClick={e => e.stopPropagation()}>
+                      <button className="btn-icon" onClick={() => openEdit(svc)}><FiEdit2 size={14} /></button>
+                      <button className="btn-icon btn-danger" onClick={() => handleDelete(svc.id)}><FiTrash2 size={14} /></button>
+                    </div>
+                  </div>
+                  <div className="service-card-details">
+                    <span className="badge badge-info">{svc.category || '—'}</span>
+                    <span className="service-card-detail-item"><FiClock size={12} /> {svc.duration_minutes}p</span>
+                    <span className="service-card-detail-item fw-600">{formatPrice(svc.price)}</span>
+                  </div>
+                  {!svc.is_active && <span className="badge badge-inactive" style={{ alignSelf: 'flex-start' }}>Ẩn</span>}
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
+
 
       {modalOpen && (
         <div className="modal-overlay" onClick={() => setModalOpen(false)}>
@@ -332,6 +372,9 @@ function Services() {
               </div>
 
               <div className="service-modal-footer">
+                {editing && (
+                  <button type="button" className="btn btn-danger" onClick={() => handleDelete(editing.id)} style={{ marginRight: 'auto', padding: '10px 16px', fontSize: '13px' }}>Xóa dịch vụ</button>
+                )}
                 <button
                   type="submit"
                   className={`btn-save ${isFormValid ? 'active' : ''}`}

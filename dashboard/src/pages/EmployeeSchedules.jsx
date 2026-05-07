@@ -39,6 +39,14 @@ function EmployeeSchedules() {
 
   const [creatingDefault, setCreatingDefault] = useState(false);
 
+  // Responsive
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
 
   const notify = (msg) => {
@@ -196,15 +204,15 @@ function EmployeeSchedules() {
   const todayStr = toDateStr(new Date());
 
   return (
-    <div>
+    <div className="schedules-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Lịch nhân viên</h1>
           <p className="page-subtitle">Quản lý lịch làm việc, ca làm, ngày nghỉ</p>
         </div>
-        <div className="d-flex gap-8">
-          <button className="btn btn-secondary" onClick={createDefaultSchedulesFor30Days} disabled={creatingDefault}>
-            {creatingDefault ? 'Đang tạo mặc định...' : 'Tạo lịch mặc định (10:00-22:00)'}
+        <div className="d-flex gap-8" style={isMobile ? { flexDirection: 'column', width: '100%' } : {}}>
+          <button className="btn btn-secondary" onClick={createDefaultSchedulesFor30Days} disabled={creatingDefault} style={isMobile ? { fontSize: 12 } : {}}>
+            {creatingDefault ? 'Đang tạo...' : 'Tạo lịch mặc định (10:00-22:00)'}
           </button>
           <button className="btn btn-primary" onClick={() => openScheduleModal()}>
             <FiPlus /> Xếp lịch
@@ -222,75 +230,125 @@ function EmployeeSchedules() {
         </div>
         <div className="cal-toolbar-right">
           <select className="form-select max-w-200 fs-13"
-            value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+            value={filterBranch} onChange={e => setFilterBranch(e.target.value)}
+            style={isMobile ? { maxWidth: '100%' } : {}}
+          >
             <option value="">Tất cả chi nhánh</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
       </div>
 
-      {/* Schedule Grid */}
-      <div className="card overflow-auto">
-        <table className="schedule-table">
-          <thead>
-            <tr>
-              <th className="schedule-emp-col">Nhân viên</th>
-              {weekDates.map(d => {
-                const ds = toDateStr(d);
-                const isToday = ds === todayStr;
-                return (
-                  <th key={ds} className={`schedule-day-col${isToday ? ' today' : ''}`}>
-                    <span className="cal-day-name">{DAY_NAMES[d.getDay()]}</span>
-                    <span className={`cal-day-num${isToday ? ' today' : ''}`}>{d.getDate()}</span>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {employees.length === 0 ? (
+      {/* Schedule Grid — Desktop: Table, Mobile: Cards */}
+      {!isMobile ? (
+        <div className="card overflow-auto">
+          <table className="schedule-table">
+            <thead>
               <tr>
-                <td colSpan={8} className="text-center text-muted" style={{ padding: 40 }}>
-                  Chưa có nhân viên
-                </td>
+                <th className="schedule-emp-col">Nhân viên</th>
+                {weekDates.map(d => {
+                  const ds = toDateStr(d);
+                  const isToday = ds === todayStr;
+                  return (
+                    <th key={ds} className={`schedule-day-col${isToday ? ' today' : ''}`}>
+                      <span className="cal-day-name">{DAY_NAMES[d.getDay()]}</span>
+                      <span className={`cal-day-num${isToday ? ' today' : ''}`}>{d.getDate()}</span>
+                    </th>
+                  );
+                })}
               </tr>
-            ) : (
-              employees.map(emp => (
-                <tr key={emp.id}>
-                  <td className="schedule-emp-name">
-                    <div className="fw-600 fs-13">{emp.name}</div>
-                    <div className="fs-11 text-muted">{emp.branches?.name}</div>
+            </thead>
+            <tbody>
+              {employees.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center text-muted" style={{ padding: 40 }}>
+                    Chưa có nhân viên
                   </td>
+                </tr>
+              ) : (
+                employees.map(emp => (
+                  <tr key={emp.id}>
+                    <td className="schedule-emp-name">
+                      <div className="fw-600 fs-13">{emp.name}</div>
+                      <div className="fs-11 text-muted">{emp.branches?.name}</div>
+                    </td>
+                    {weekDates.map(d => {
+                      const ds = toDateStr(d);
+                      const sched = getSchedule(emp.id, ds);
+                      const isToday = ds === todayStr;
+
+                      return (
+                        <td key={ds} className={`schedule-cell${isToday ? ' today' : ''}`}
+                          onClick={() => openScheduleModal(emp.id, ds)}>
+                          {sched ? (
+                            <div className={`schedule-badge ${sched.is_day_off ? 'day-off' : 'working'}`}
+                              onClick={(e) => { e.stopPropagation(); openScheduleModal(emp.id, ds, sched); }}>
+                              {sched.is_day_off ? (
+                                <span>Nghỉ</span>
+                              ) : (
+                                <span>{sched.start_time?.substring(0, 5)} - {sched.end_time?.substring(0, 5)}</span>
+                              )}
+                              {sched.note && <div className="schedule-note">{sched.note}</div>}
+                            </div>
+                          ) : (
+                            <div className="schedule-empty">+</div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* Mobile: Employee cards with compact 7-day grid */
+        <div className="schedule-mobile-list">
+          {employees.length === 0 ? (
+            <div className="empty-state">
+              <h4>Chưa có nhân viên</h4>
+            </div>
+          ) : (
+            employees.map(emp => (
+              <div key={emp.id} className="schedule-mobile-emp">
+                <div className="schedule-mobile-emp-header">
+                  <div>
+                    <div className="schedule-mobile-emp-name">{emp.name}</div>
+                    <div className="schedule-mobile-emp-branch">{emp.branches?.name}</div>
+                  </div>
+                </div>
+                <div className="schedule-mobile-days">
                   {weekDates.map(d => {
                     const ds = toDateStr(d);
                     const sched = getSchedule(emp.id, ds);
                     const isToday = ds === todayStr;
 
                     return (
-                      <td key={ds} className={`schedule-cell${isToday ? ' today' : ''}`}
-                        onClick={() => openScheduleModal(emp.id, ds)}>
+                      <div
+                        key={ds}
+                        className={`schedule-mobile-day${isToday ? ' today' : ''}`}
+                        onClick={() => openScheduleModal(emp.id, ds, sched || undefined)}
+                      >
+                        <span className="schedule-mobile-day-label">{DAY_NAMES[d.getDay()]}</span>
+                        <span className={`schedule-mobile-day-num${isToday ? ' today' : ''}`}>{d.getDate()}</span>
                         {sched ? (
-                          <div className={`schedule-badge ${sched.is_day_off ? 'day-off' : 'working'}`}
-                            onClick={(e) => { e.stopPropagation(); openScheduleModal(emp.id, ds, sched); }}>
-                            {sched.is_day_off ? (
-                              <span>Nghỉ</span>
-                            ) : (
-                              <span>{sched.start_time?.substring(0, 5)} - {sched.end_time?.substring(0, 5)}</span>
-                            )}
-                            {sched.note && <div className="schedule-note">{sched.note}</div>}
-                          </div>
+                          <span className={`schedule-mobile-day-status ${sched.is_day_off ? 'day-off' : 'working'}`}>
+                            {sched.is_day_off ? 'Nghỉ' : `${sched.start_time?.substring(0, 5)}-${sched.end_time?.substring(0, 5)}`}
+                          </span>
                         ) : (
-                          <div className="schedule-empty">+</div>
+                          <span className="schedule-mobile-day-status empty">+</span>
                         )}
-                      </td>
+                      </div>
                     );
                   })}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
 
       {/* Schedule Modal */}
       {modalOpen && (

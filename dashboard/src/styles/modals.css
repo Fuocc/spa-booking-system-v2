@@ -38,11 +38,11 @@
   animation: slideUp 0.3s ease;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .modal {
     padding: 24px 20px;
     gap: 16px;
-    max-width: 95%;
+    max-width: 100%;
   }
 }
 

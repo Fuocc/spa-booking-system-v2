@@ -470,6 +470,7 @@
   z-index: 10;
   pointer-events: none;
   box-shadow: 0 0 2px rgba(255, 255, 255, 0.8);
+  z-index: 11;
 }
 
 .calendar-grid .cal-staff-column:nth-child(2) .cal-now-line::before {
@@ -1138,4 +1139,194 @@
   background: #fef3c7;
   color: #d97706;
   border: 1px solid #f59e0b;
+}
+
+/* ============================================
+   Responsive Bookings — Tablet (≤1024px)
+   ============================================ */
+@media (max-width: 1024px) {
+  .cal-toolbar-wrap {
+    padding: 16px;
+    gap: 8px;
+  }
+
+  .cal-week-label {
+    font-size: 14px;
+    margin-right: 8px;
+  }
+
+  .cal-staff-header {
+    font-size: 13px;
+    height: 44px;
+  }
+}
+
+/* ============================================
+   Responsive Bookings — Mobile (≤768px)
+   ============================================ */
+@media (max-width: 768px) {
+  .full-view-bookings {
+    min-height: calc(100vh - var(--mobile-header-height, 56px) - var(--mobile-bottom-nav-height, 64px));
+  }
+
+  .cal-toolbar {
+    position: sticky;
+    top: var(--mobile-header-height, 56px);
+  }
+
+  .cal-toolbar-wrap {
+    flex-direction: column;
+    padding: 12px 16px;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .cal-toolbar-left {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .cal-toolbar-right {
+    gap: 8px;
+    width: 100%;
+  }
+
+  .cal-toolbar-right .form-select {
+    flex: 1;
+    max-width: none;
+  }
+
+  .cal-week-label {
+    font-size: 14px;
+    margin-right: 4px;
+    flex: 1;
+  }
+
+  /* Mobile list view: card-based instead of table */
+  .booking-list-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .booking-card-mobile {
+    background: var(--white);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .booking-card-mobile:active {
+    transform: scale(0.98);
+    border-color: var(--chip-gray);
+  }
+
+  .booking-card-mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .booking-card-mobile-customer {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--black);
+  }
+
+  .booking-card-mobile-time {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--body-gray);
+  }
+
+  .booking-card-mobile-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .booking-card-mobile-service {
+    font-size: 13px;
+    color: var(--body-gray);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .booking-card-mobile-staff {
+    font-size: 13px;
+    color: var(--muted-gray);
+  }
+
+  .booking-card-mobile-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 6px;
+    border-top: 1px solid var(--chip-gray);
+  }
+
+  .booking-card-mobile-price {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--black);
+  }
+
+  /* Hide table on mobile, show mobile cards */
+  .data-table.hide-on-mobile {
+    display: none !important;
+  }
+
+  /* Pagination responsive */
+  .pagination-container {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+
+  .items-per-page {
+    font-size: 12px;
+  }
+
+  /* Drag confirm responsive */
+  .drag-confirm-popup {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 20px;
+  }
+
+  .drag-confirm-actions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .drag-confirm-cancel,
+  .drag-confirm-submit {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* ============================================
+   Responsive Bookings — Small mobile (≤400px)
+   ============================================ */
+@media (max-width: 400px) {
+  .cal-toolbar-left {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .cal-week-label {
+    font-size: 13px;
+    width: 100%;
+  }
 }

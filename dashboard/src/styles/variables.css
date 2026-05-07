@@ -29,4 +29,6 @@
   --font: 'Inter', system-ui, -apple-system, sans-serif;
   --sidebar-width: 260px;
   --header-height: 64px;
+  --mobile-header-height: 56px;
+  --mobile-bottom-nav-height: 64px;
 }

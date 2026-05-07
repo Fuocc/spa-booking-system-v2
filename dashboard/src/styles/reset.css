@@ -59,3 +59,18 @@ select:focus {
 textarea {
   font-family: 'Inter', sans-serif;
 }
+
+/* ---- PWA Touch Behavior ---- */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Support safe areas for PWA on iOS */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Prevent pull-to-refresh in standalone mode */
+body {
+  overscroll-behavior-y: contain;
+}

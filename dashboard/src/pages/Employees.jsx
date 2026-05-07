@@ -13,6 +13,14 @@ function Employees() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', phone: '', branch_id: '', is_active: true });
 
+  // Responsive
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+
   const notify = (msg) => {
     toast.success(msg, {
       position: "bottom-right"
@@ -105,6 +113,7 @@ function Employees() {
             className="form-input max-w-240 p-8-12 fs-13"
             value={filterBranch}
             onChange={e => setFilterBranch(e.target.value)}
+            style={isMobile ? { maxWidth: '100%' } : {}}
           >
             <option value="">Tất cả chi nhánh</option>
             {branches.map(b => (
@@ -112,51 +121,80 @@ function Employees() {
             ))}
           </select>
         </div>
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Tên</th>
-                <th>Số điện thoại</th>
-                <th>Chi nhánh</th>
-                <th>Trạng thái</th>
-                <th>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {employees.length === 0 ? (
+
+        {!isMobile ? (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan="5">
-                    <div className="empty-state">
-                      <h4>Chưa có nhân viên</h4>
-                      <p>Thêm nhân viên để bắt đầu nhận lịch đặt</p>
-                    </div>
-                  </td>
+                  <th>Tên</th>
+                  <th>Số điện thoại</th>
+                  <th>Chi nhánh</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
                 </tr>
-              ) : (
-                employees.map(emp => (
-                  <tr key={emp.id}>
-                    <td className="fw-600">{emp.name}</td>
-                    <td>{emp.phone || '—'}</td>
-                    <td>{emp.branches?.name || '—'}</td>
-                    <td>
-                      <span className={`badge ${emp.is_active ? 'badge-active' : 'badge-inactive'}`}>
-                        {emp.is_active ? 'Hoạt động' : 'Nghỉ'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="actions-cell">
-                        <button className="btn-icon" onClick={() => openEdit(emp)}><FiEdit2 size={14} /></button>
-                        <button className="btn-icon btn-danger" onClick={() => handleDelete(emp.id)}><FiTrash2 size={14} /></button>
+              </thead>
+              <tbody>
+                {employees.length === 0 ? (
+                  <tr>
+                    <td colSpan="5">
+                      <div className="empty-state">
+                        <h4>Chưa có nhân viên</h4>
+                        <p>Thêm nhân viên để bắt đầu nhận lịch đặt</p>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  employees.map(emp => (
+                    <tr key={emp.id}>
+                      <td className="fw-600">{emp.name}</td>
+                      <td>{emp.phone || '—'}</td>
+                      <td>{emp.branches?.name || '—'}</td>
+                      <td>
+                        <span className={`badge ${emp.is_active ? 'badge-active' : 'badge-inactive'}`}>
+                          {emp.is_active ? 'Hoạt động' : 'Nghỉ'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="actions-cell">
+                          <button className="btn-icon" onClick={() => openEdit(emp)}><FiEdit2 size={14} /></button>
+                          <button className="btn-icon btn-danger" onClick={() => handleDelete(emp.id)}><FiTrash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="mobile-card-list">
+            {employees.length === 0 ? (
+              <div className="empty-state">
+                <h4>Chưa có nhân viên</h4>
+                <p>Thêm nhân viên để bắt đầu nhận lịch đặt</p>
+              </div>
+            ) : (
+              employees.map(emp => (
+                <div key={emp.id} className="mobile-card employee-card" onClick={() => openEdit(emp)}>
+                  <div className="employee-card-info">
+                    <div className="employee-card-name">{emp.name}</div>
+                    <div className="employee-card-branch">{emp.branches?.name || '—'} · {emp.phone || '—'}</div>
+                  </div>
+                  <span className={`badge ${emp.is_active ? 'badge-active' : 'badge-inactive'}`}>
+                    {emp.is_active ? 'Hoạt động' : 'Nghỉ'}
+                  </span>
+                  <div className="mobile-card-actions" onClick={e => e.stopPropagation()}>
+                    <button className="btn-icon" onClick={() => openEdit(emp)}><FiEdit2 size={14} /></button>
+                    <button className="btn-icon btn-danger" onClick={() => handleDelete(emp.id)}><FiTrash2 size={14} /></button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
+
 
       {modalOpen && (
         <div className="modal-overlay" onClick={() => setModalOpen(false)}>
@@ -201,6 +239,9 @@ function Employees() {
                 )}
               </div>
               <div className="modal-footer">
+                {editing && (
+                  <button type="button" className="btn btn-danger" onClick={() => handleDelete(editing.id)} style={{ marginRight: 'auto' }}>Xóa nhân viên</button>
+                )}
                 <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>Hủy</button>
                 <button type="submit" className="btn btn-primary">{editing ? 'Cập nhật' : 'Thêm'}</button>
               </div>

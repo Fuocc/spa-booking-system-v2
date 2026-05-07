@@ -72,33 +72,25 @@ const STATUS_COLORS = {
   completed: { bg: '#eff6ff', border: '#2563eb', text: '#2563eb' }
 };
 
-const CARD_PALETTE = [
-  '#EDF4EB', // Green
-  '#F1F1EF', // Grey
-  '#F8F3EC', // Beige
-  '#ECF5F8', // Blue
-  '#EEECF8', // Purple
-  '#F8ECF4', // Pink
-  '#FEECEC'  // Red
-];
+const normalize = (str) => (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 
 const getBookingColor = (booking) => {
   if (booking.status === 'pending' && booking.internal_note) {
     return STATUS_COLORS.pending.bg;
   }
-  // Stable random index based on ID string or number
-  const idStr = String(booking.id);
-  let hash = 0;
-  for (let i = 0; i < idStr.length; i++) {
-    hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+
+  const name = normalize(booking.customers?.name || '');
+  if (name === 'khach la') {
+    return '#F1F1EF'; // Grey
   }
-  const index = Math.abs(hash) % CARD_PALETTE.length;
-  return CARD_PALETTE[index];
+
+  return booking.services?.color || '#EDF4EB';
 };
 
 const formatPrice = (v) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v || 0);
 const formatTime = (t) => t ? t.substring(0, 5) : '-';
-const normalize = (str) => (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 
 const normalizeName = (name) => {
   if (!name) return '';
@@ -114,8 +106,21 @@ const normalizeName = (name) => {
 };
 
 function Bookings({ data }) {
+  // Responsive: detect mobile for PWA
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'list'
+  // On mobile, always force list view
+  const effectiveViewMode = isMobile ? 'list' : viewMode;
+
   const [currentDate, setCurrentDate] = useState(new Date());
+
   const [bookings, setBookings] = useState([]);
   const [branches, setBranches] = useState([]);
   const [services, setServices] = useState([]);
@@ -1070,14 +1075,17 @@ function Bookings({ data }) {
             <button className="btn btn-sm btn-ghost fs-15 fw-500" onClick={goToday}>Hôm nay</button>
           </div>
           <div className="cal-toolbar-right">
-            <div className="cal-view-toggle">
-              <button className={`cal-view-btn${viewMode === 'calendar' ? ' active' : ''}`} onClick={() => setViewMode('calendar')}>
-                <FiCalendar size={14} />
-              </button>
-              <button className={`cal-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => setViewMode('list')}>
-                <FiList size={14} />
-              </button>
-            </div>
+            {/* Hide view toggle on mobile — mobile always shows list */}
+            {!isMobile && (
+              <div className="cal-view-toggle">
+                <button className={`cal-view-btn${effectiveViewMode === 'calendar' ? ' active' : ''}`} onClick={() => setViewMode('calendar')}>
+                  <FiCalendar size={14} />
+                </button>
+                <button className={`cal-view-btn${effectiveViewMode === 'list' ? ' active' : ''}`} onClick={() => setViewMode('list')}>
+                  <FiList size={14} />
+                </button>
+              </div>
+            )}
             <select className="form-select max-w-200"
               value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -1087,7 +1095,7 @@ function Bookings({ data }) {
             </button>
           </div>
         </div>
-        {viewMode === 'calendar' && (
+        {effectiveViewMode === 'calendar' && (
           <div className="cal-staff-header-wrap">
             {/* Header row */}
             <div className="cal-staff-header"></div>
@@ -1108,7 +1116,8 @@ function Bookings({ data }) {
       </div>
 
       {/* Calendar View */}
-      {viewMode === 'calendar' ? (
+      {effectiveViewMode === 'calendar' ? (
+
         <div className="cal-container">
 
           <div className='calendar-grid' ref={gridRef}>
@@ -1261,60 +1270,101 @@ function Bookings({ data }) {
       ) : (
         /* List View */
         <div className="card">
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Khách hàng</th>
-                  <th>Dịch vụ</th>
-                  <th>Chi nhánh</th>
-                  <th>Ngày</th>
-                  <th>Giờ</th>
-                  <th>Nhân viên</th>
-                  <th>Ghi chú</th>
-                  <th>Trạng thái</th>
-                  <th>Giá</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookings.length === 0 ? (
+          {/* Desktop Table */}
+          {!isMobile ? (
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <td colSpan="9">
-                      <div className="empty-state">
-                        <FiCalendar size={32} />
-                        <h4>Không có lịch hẹn</h4>
-                        <p>Chưa có lịch hẹn nào trong tuần này</p>
-                      </div>
-                    </td>
+                    <th>Khách hàng</th>
+                    <th>Dịch vụ</th>
+                    <th>Chi nhánh</th>
+                    <th>Ngày</th>
+                    <th>Giờ</th>
+                    <th>Nhân viên</th>
+                    <th>Ghi chú</th>
+                    <th>Trạng thái</th>
+                    <th>Giá</th>
                   </tr>
-                ) : (
-                  bookings
-                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                    .map(b => (
-                      <tr key={b.id} onClick={() => handleOpenDetail(b)} className={`cursor-pointer${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}`}>
-                        <td>
-                          <div className="fw-600">{b.customers?.name || '-'}</div>
-                          <div className="fs-12 text-muted">{b.customers?.phone}</div>
-                        </td>
-                        <td>{b.services?.name || '-'}</td>
-                        <td>{b.branches?.name || '-'}</td>
-                        <td>{new Date(b.booking_date + 'T00:00:00').toLocaleDateString('vi-VN')}</td>
-                        <td>{formatTime(b.start_time)} - {formatTime(b.end_time)}</td>
-                        <td>{b.employees?.name || '-'}</td>
-                        <td>
-                          {b.notes || '-'}
-                          {b.internal_note && <div className="fs-11 text-warning-orange mt-2">{b.internal_note}</div>}
-                        </td>
-                        <td>
-                          <span className={`badge badge-${b.status}`}>{b.status}</span>
-                        </td>
-                        <td className="fw-600">{formatPrice(b.total_price)}</td>
-                      </tr>
-                    ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {bookings.length === 0 ? (
+                    <tr>
+                      <td colSpan="9">
+                        <div className="empty-state">
+                          <FiCalendar size={32} />
+                          <h4>Không có lịch hẹn</h4>
+                          <p>Chưa có lịch hẹn nào trong ngày này</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    bookings
+                      .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                      .map(b => (
+                        <tr key={b.id} onClick={() => handleOpenDetail(b)} className={`cursor-pointer${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}`}>
+                          <td>
+                            <div className="fw-600">{b.customers?.name || '-'}</div>
+                            <div className="fs-12 text-muted">{b.customers?.phone}</div>
+                          </td>
+                          <td>{b.services?.name || '-'}</td>
+                          <td>{b.branches?.name || '-'}</td>
+                          <td>{new Date(b.booking_date + 'T00:00:00').toLocaleDateString('vi-VN')}</td>
+                          <td>{formatTime(b.start_time)} - {formatTime(b.end_time)}</td>
+                          <td>{b.employees?.name || '-'}</td>
+                          <td>
+                            {b.notes || '-'}
+                            {b.internal_note && <div className="fs-11 text-warning-orange mt-2">{b.internal_note}</div>}
+                          </td>
+                          <td>
+                            <span className={`badge badge-${b.status}`}>{b.status}</span>
+                          </td>
+                          <td className="fw-600">{formatPrice(b.total_price)}</td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* Mobile Card Layout */
+            <div className="booking-list-mobile">
+              {bookings.length === 0 ? (
+                <div className="empty-state">
+                  <FiCalendar size={32} />
+                  <h4>Không có lịch hẹn</h4>
+                  <p>Chưa có lịch hẹn nào trong ngày này</p>
+                </div>
+              ) : (
+                bookings
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map(b => (
+                    <div
+                      key={b.id}
+                      className={`booking-card-mobile${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}`}
+                      onClick={() => handleOpenDetail(b)}
+                    >
+                      <div className="booking-card-mobile-header">
+                        <span className="booking-card-mobile-customer">{b.customers?.name || '-'}</span>
+                        <span className="booking-card-mobile-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</span>
+                      </div>
+                      <div className="booking-card-mobile-body">
+                        <span className="booking-card-mobile-service">
+                          <span className="service-icon-dot sm" style={{ background: b.services?.color || '#0d8a3f' }}></span>
+                          {b.services?.name || '-'}
+                        </span>
+                        <span className="booking-card-mobile-staff">{b.employees?.name || '-'}</span>
+                      </div>
+                      <div className="booking-card-mobile-footer">
+                        <span className={`badge badge-${b.status}`}>{b.status}</span>
+                        <span className="booking-card-mobile-price">{formatPrice(b.total_price)}</span>
+                      </div>
+                      {b.internal_note && <div className="fs-11 text-warning-orange">{b.internal_note}</div>}
+                    </div>
+                  ))
+              )}
+            </div>
+          )}
 
           {/* Pagination Footer */}
           <div className="pagination-container">
@@ -1344,6 +1394,7 @@ function Bookings({ data }) {
           </div>
         </div>
       )}
+
 
       {/* Booking Detail Modal */}
       {detailModal && (

@@ -4,6 +4,8 @@ import { HiOutlineChevronLeft, HiOutlineChevronRight } from "react-icons/hi";
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../api';
 import { toast } from 'react-toastify'
 
+import noteIcon from '../assets/note-icon.svg';
+
 
 const normalizeName = (name) => {
   if (!name) return '';
@@ -29,6 +31,14 @@ function Customers() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // Responsive
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
 
   const notify = (msg) => {
     toast.success(msg, {
@@ -113,6 +123,8 @@ function Customers() {
     return new Date(dateStr).toLocaleDateString('vi-VN');
   };
 
+  const paginatedCustomers = customers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   return (
     <div>
       <div className="page-header">
@@ -127,7 +139,7 @@ function Customers() {
 
       <div className="card">
         <div className="card-header">
-          <div className="search-bar" style={{ margin: 0, flex: 1, maxWidth: 280 }}>
+          <div className="search-bar" style={{ margin: 0, flex: 1, maxWidth: isMobile ? '100%' : 280 }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M11 17.5C14.5899 17.5 17.5 14.5899 17.5 11C17.5 7.41015 14.5899 4.5 11 4.5C7.41015 4.5 4.5 7.41015 4.5 11C4.5 14.5899 7.41015 17.5 11 17.5Z" stroke="#afafaf"></path>
               <path d="M20.4 20.5L15.5 15.7" stroke="#afafaf"></path>
@@ -142,33 +154,32 @@ function Customers() {
           </div>
         </div>
 
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Tên</th>
-                <th>Số điện thoại</th>
-                <th>Email</th>
-                <th>Ghi chú</th>
-                <th>Ngày tạo</th>
-                <th>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {customers.length === 0 ? (
+        {!isMobile ? (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan="7">
-                    <div className="empty-state">
-                      <h4>Chưa có khách hàng</h4>
-                      <p>Khách hàng sẽ được thêm tự động khi đặt lịch</p>
-                    </div>
-                  </td>
+                  <th>ID</th>
+                  <th>Tên</th>
+                  <th>Số điện thoại</th>
+                  <th>Email</th>
+                  <th>Ghi chú</th>
+                  <th>Ngày tạo</th>
+                  <th>Thao tác</th>
                 </tr>
-              ) : (
-                customers
-                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                  .map(c => (
+              </thead>
+              <tbody>
+                {customers.length === 0 ? (
+                  <tr>
+                    <td colSpan="7">
+                      <div className="empty-state">
+                        <h4>Chưa có khách hàng</h4>
+                        <p>Khách hàng sẽ được thêm tự động khi đặt lịch</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedCustomers.map(c => (
                     <tr key={c.id}>
                       <td>{c.id}</td>
                       <td style={{ fontWeight: 600 }}>{c.name}</td>
@@ -188,10 +199,39 @@ function Customers() {
                       </td>
                     </tr>
                   ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="mobile-card-list">
+            {customers.length === 0 ? (
+              <div className="empty-state">
+                <h4>Chưa có khách hàng</h4>
+                <p>Khách hàng sẽ được thêm tự động khi đặt lịch</p>
+              </div>
+            ) : (
+              paginatedCustomers.map(c => (
+                <div key={c.id} className="mobile-card customer-card" onClick={() => openEdit(c)}>
+                  <div className="mobile-card-row">
+                    <span className="mobile-card-primary">{c.name}</span>
+                    <div className="mobile-card-actions" onClick={e => e.stopPropagation()}>
+                      <button className="btn-icon" onClick={() => openEdit(c)}><FiEdit2 size={14} /></button>
+                      <button className="btn-icon btn-danger" onClick={() => handleDelete(c.id)}><FiTrash2 size={14} /></button>
+                    </div>
+                  </div>
+                  <div className="mobile-card-row">
+                    <span className="mobile-card-secondary">{c.phone}</span>
+                  </div>
+                  <div className="customer-card-meta">
+                    <span className="customer-card-id">{c.id}</span>
+                    {c.habits ? <img src={noteIcon} alt="note icon" className='customer-card-note' /> : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
         {/* Pagination Footer */}
         <div className="pagination-container">
@@ -226,6 +266,7 @@ function Customers() {
           </div>
         )}
       </div>
+
 
       {/* Modal */}
       {modalOpen && (
@@ -285,6 +326,9 @@ function Customers() {
               </div>
 
               <div className="modal-footer">
+                {editingCustomer && (
+                  <button type="button" className="btn btn-danger" onClick={() => handleDelete(editingCustomer.id)} style={{ marginRight: 'auto' }}>Xóa khách hàng</button>
+                )}
                 <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>Hủy</button>
                 <button type="submit" className="btn btn-primary">{editingCustomer ? 'Cập nhật' : 'Thêm'}</button>
               </div>
