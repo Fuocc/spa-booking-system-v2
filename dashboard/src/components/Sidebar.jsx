@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { FiUsers, FiUserCheck, FiScissors, FiCalendar, FiMapPin, FiLogOut, FiClock, FiSettings, FiMenu, FiX } from 'react-icons/fi';
+import { FiUsers, FiUserCheck, FiScissors, FiCalendar, FiMapPin, FiLogOut, FiClock, FiSettings, FiMenu, FiX, FiBell } from 'react-icons/fi';
 import { Avatar, Circle, Float } from "@chakra-ui/react"
+import { supabase } from '../supabaseClient';
 import '../styles/sidebar.css';
 
 
@@ -10,6 +11,139 @@ function Sidebar({ user, onLogout }) {
   const location = useLocation();
 
   const role = user?.user_metadata?.role || user?.app_metadata?.role;
+
+  // ---- Notifications State & Real-time Listeners ----
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const saved = localStorage.getItem('yoi_notifications');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('yoi_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markAsRead = (id) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const markAllAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const handleNewBooking = useCallback((booking) => {
+    // 1) Filter out temporary holds ("Khách đang đặt")
+    const isHold = booking.status === 'pending' && booking.internal_note?.includes('[Khách đang đặt]');
+    if (isHold) return;
+
+    // 2) Parse customer, service and branch details
+    const customerName = booking.customers?.name || booking.customer_name || 'Khách Lạ';
+    const serviceName = booking.services?.name || booking.service_name || 'Dịch vụ';
+    const branchName = booking.branches?.name || 'Chi nhánh';
+    const startTime = booking.start_time || '';
+
+    // Play a gentle soft bell sound
+    try {
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, context.currentTime); // D5
+      osc.frequency.setValueAtTime(880.00, context.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.08, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.start();
+      osc.stop(context.currentTime + 0.35);
+    } catch (e) {
+      console.warn("Sound blocked by browser user gesture policies", e);
+    }
+
+    // 3) Create clean notification card
+    const newNotif = {
+      id: `${booking.id || Date.now()}-${Math.random()}`,
+      title: 'Lịch hẹn mới! 🎉',
+      message: `${customerName} vừa đặt lịch ${serviceName} tại ${branchName} lúc ${startTime.substring(0, 5)}`,
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      read: false
+    };
+
+    setNotifications(prev => [newNotif, ...prev].slice(0, 50));
+  }, []);
+
+  useEffect(() => {
+    // 1) Supabase Realtime for cross-port guest booking creations
+    const channel = supabase
+      .channel('realtime-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'bookings'
+        },
+        async (payload) => {
+          try {
+            // Fetch relations
+            const { data: booking, error } = await supabase
+              .from('bookings')
+              .select(`
+                *,
+                customers(name, phone),
+                services(name, color),
+                branches(name)
+              `)
+              .eq('id', payload.new.id)
+              .single();
+
+            if (!error && booking) {
+              handleNewBooking(booking);
+            }
+          } catch (err) {
+            console.error("Error fetching notification details:", err);
+          }
+        }
+      )
+      .subscribe();
+
+    // 2) SSE Connection for local actions
+    const API_BASE = import.meta.env.VITE_API_BASE;
+    const sseUrl = API_BASE.replace(/\/api$/, '') + '/api/events';
+    
+    let eventSource;
+    let reconnectTimer;
+    
+    const connect = () => {
+      eventSource = new EventSource(sseUrl);
+      
+      eventSource.addEventListener('booking.created', (e) => {
+        const booking = JSON.parse(e.data);
+        console.log('🔔 Notification SSE: New booking', booking);
+        handleNewBooking(booking);
+      });
+      
+      eventSource.onerror = () => {
+        eventSource.close();
+        reconnectTimer = setTimeout(connect, 5000);
+      };
+    };
+    
+    connect();
+    
+    return () => {
+      supabase.removeChannel(channel);
+      if (eventSource) eventSource.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, [handleNewBooking]);
 
   // Định nghĩa menu cho từng quyền
   const adminItems = [
@@ -36,7 +170,7 @@ function Sidebar({ user, onLogout }) {
       { path: '/', label: 'Lịch hẹn', icon: FiCalendar },
       { path: '/customers', label: 'Khách', icon: FiUsers },
       { path: '/schedules', label: 'Lịch NV', icon: FiClock },
-      { path: '/services', label: 'Dịch vụ', icon: FiScissors },
+      { path: '/employees', label: 'Nhân viên', icon: FiUserCheck },
     ]
     : staffItems;
 
@@ -68,13 +202,6 @@ function Sidebar({ user, onLogout }) {
 
   return (
     <>
-      {/* Mobile Top Header */}
-      <header className="mobile-header">
-        <div className="mobile-header-logo">
-          Ý Ơi <span>Dashboard</span>
-        </div>
-      </header>
-
       {/* Mobile Overlay */}
       <div
         className={`sidebar-overlay${mobileOpen ? ' visible' : ''}`}
@@ -100,6 +227,21 @@ function Sidebar({ user, onLogout }) {
               <span className="sidebar-label">{item.label}</span>
             </NavLink>
           ))}
+
+          {/* Notification Sidebar Item */}
+          <button
+            className={`sidebar-link${panelOpen ? ' active' : ''}`}
+            onClick={(e) => { e.preventDefault(); setPanelOpen(prev => !prev); }}
+            title="Thông báo"
+          >
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <FiBell className={unreadCount > 0 ? "bell-ringing" : ""} />
+              {unreadCount > 0 && (
+                <span className="notif-badge">{unreadCount}</span>
+              )}
+            </div>
+            <span className="sidebar-label" style={{ marginLeft: 0 }}>Thông báo</span>
+          </button>
         </nav>
 
         <div className="sidebar-footer">
@@ -145,13 +287,78 @@ function Sidebar({ user, onLogout }) {
             <button
               className={`mobile-nav-item${mobileOpen ? ' active' : ''}`}
               onClick={toggleMobile}
+              style={{ position: 'relative' }}
             >
               <FiMenu />
+              {unreadCount > 0 && (
+                <span className="notif-badge" style={{ top: 2, right: 12, minWidth: 10, height: 10, border: '1px solid white' }}></span>
+              )}
+              <span>Thêm</span>
+            </button>
+          )}
+
+          {role === 'staff' && (
+            <button
+              className={`mobile-nav-item${mobileOpen ? ' active' : ''}`}
+              onClick={toggleMobile}
+              style={{ position: 'relative' }}
+            >
+              <FiMenu />
+              {unreadCount > 0 && (
+                <span className="notif-badge" style={{ top: 2, right: 12, minWidth: 10, height: 10, border: '1px solid white' }}></span>
+              )}
               <span>Thêm</span>
             </button>
           )}
         </div>
       </nav>
+
+      {/* Notifications Slide-over Sheet */}
+      {panelOpen && (
+        <div className="notif-panel-overlay" onClick={() => setPanelOpen(false)}>
+          <div className="notif-panel" onClick={e => e.stopPropagation()}>
+            <div className="notif-panel-header">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3>Thông báo ({unreadCount} chưa đọc)</h3>
+                <button className="btn-close-notif" onClick={() => setPanelOpen(false)}>
+                  <FiX size={16} />
+                </button>
+              </div>
+              <div className="notif-panel-actions">
+                {unreadCount > 0 && (
+                  <button className="btn-mark-all" onClick={markAllAsRead}>
+                    Đánh dấu đã đọc tất cả
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            <div className="notif-panel-body">
+              {notifications.length === 0 ? (
+                <div className="notif-empty">
+                  <FiBell size={32} />
+                  <p>Không có thông báo nào</p>
+                </div>
+              ) : (
+                notifications.map(n => (
+                  <div 
+                    key={n.id} 
+                    className={`notif-item${!n.read ? ' unread' : ''}`}
+                    onClick={() => markAsRead(n.id)}
+                  >
+                    <div className="notif-item-header">
+                      <span className="notif-item-title">{n.title}</span>
+                      <span className="notif-item-time">{n.time}</span>
+                    </div>
+                    <p className="notif-item-msg">{n.message}</p>
+                    {!n.read && <span className="notif-unread-dot" />}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -47,7 +47,7 @@
   }
 
   .page-content>div:not(.full-view) {
-    padding: 24px;
+    padding: 56px 24px 0px;
   }
 
   .page-title {
@@ -61,12 +61,7 @@
 @media (max-width: 768px) {
   .main-content {
     margin-left: 0;
-    padding-top: calc(var(--mobile-header-height, 56px) + env(safe-area-inset-top, 0px));
     padding-bottom: calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom, 0px));
-  }
-
-  .page-content>div:not(.full-view) {
-    padding: 12px 16px 16px;
   }
 
   .page-header {

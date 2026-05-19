@@ -189,7 +189,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    padding: 12px;
   }
 
   .schedule-mobile-emp {
@@ -319,7 +318,6 @@
   .schedules-page .cal-toolbar {
     flex-direction: column;
     gap: 8px;
-    padding: 12px 16px;
   }
 
   .schedules-page .cal-toolbar-left {

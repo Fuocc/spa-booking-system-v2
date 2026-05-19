@@ -16,10 +16,11 @@ import clockIcon from '../assets/clock-icon.svg';
 import noteIcon from '../assets/note-icon.svg';
 
 import { DatePicker, parseDate } from "@chakra-ui/react"
+import { supabase } from '../supabaseClient';
 // import '../styles/timepicker.css';
 import '../styles/bookings.css';
 // ---- Helpers ----
-const OPEN_HOUR = 10;
+const OPEN_HOUR = 9;
 const CLOSE_HOUR = 22;
 const HOURS = Array.from({ length: CLOSE_HOUR - OPEN_HOUR }, (_, i) => OPEN_HOUR + i);
 
@@ -89,7 +90,17 @@ const getBookingColor = (booking) => {
 };
 
 const formatPrice = (v) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v || 0);
-const formatTime = (t) => t ? t.substring(0, 5) : '-';
+const formatTime = (t) => {
+  if (!t) return '-';
+  const cleanTime = t.substring(0, 5);
+  const [hStr, mStr] = cleanTime.split(':');
+  const h = parseInt(hStr);
+  if (isNaN(h)) return cleanTime;
+  const period = h < 12 ? 'AM' : 'PM';
+  let h12 = h % 12;
+  if (h12 === 0) h12 = 12;
+  return `${String(h12).padStart(2, '0')}:${mStr} ${period}`;
+};
 
 
 const normalizeName = (name) => {
@@ -206,6 +217,33 @@ function Bookings({ data }) {
     loadInitialData();
   }, []);
 
+  // Keep refs of current values to avoid stale closures in event listeners
+  const currentDateRef = useRef(currentDate);
+  const filterBranchRef = useRef(filterBranch);
+
+  useEffect(() => {
+    currentDateRef.current = currentDate;
+  }, [currentDate]);
+
+  useEffect(() => {
+    filterBranchRef.current = filterBranch;
+  }, [filterBranch]);
+
+  // Ultra-fast helper to refresh ONLY bookings without refetching employees/settings/schedules.
+  // This drastically reduces API calls from 4 to 1 per real-time event.
+  const refreshBookingsOnly = async () => {
+    const branchId = filterBranchRef.current;
+    const dateStr = toDateStr(currentDateRef.current);
+    if (!branchId) return;
+
+    try {
+      const bookingsData = await getBookingsRange(dateStr, dateStr, branchId);
+      setBookings(bookingsData.filter(b => b.status !== 'cancelled'));
+    } catch (err) {
+      console.error("📡 Error refreshing bookings in real-time:", err);
+    }
+  };
+
   useEffect(() => {
     loadBookings();
   }, [currentDate, filterBranch]);
@@ -214,6 +252,75 @@ function Bookings({ data }) {
     const timer = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // ---- Live Booking Updates (SSE & Supabase Realtime) ----
+  useEffect(() => {
+    // 1) Supabase Realtime (for booking creations & holds on other ports/backends)
+    const channel = supabase
+      .channel('realtime-bookings')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bookings'
+        },
+        (payload) => {
+          console.log('📡 Supabase Realtime: Booking change detected!', payload);
+          refreshBookingsOnly();
+        }
+      )
+      .subscribe();
+
+    // 2) SSE Connection (for backend events on this server)
+    const API_BASE = import.meta.env.VITE_API_BASE;
+    const sseUrl = API_BASE.replace(/\/api$/, '') + '/api/events';
+    
+    let eventSource;
+    let reconnectTimer;
+    
+    const connect = () => {
+      eventSource = new EventSource(sseUrl);
+      
+      eventSource.addEventListener('booking.created', (e) => {
+        console.log('📡 SSE: New booking created', JSON.parse(e.data));
+        refreshBookingsOnly();
+      });
+      
+      eventSource.addEventListener('booking.updated', (e) => {
+        console.log('📡 SSE: Booking updated', JSON.parse(e.data));
+        refreshBookingsOnly();
+      });
+      
+      eventSource.addEventListener('booking.deleted', (e) => {
+        console.log('📡 SSE: Booking deleted', JSON.parse(e.data));
+        refreshBookingsOnly();
+      });
+
+      eventSource.addEventListener('booking.hold', (e) => {
+        console.log('📡 SSE: Slot hold created', JSON.parse(e.data));
+        refreshBookingsOnly();
+      });
+
+      eventSource.addEventListener('booking.hold_released', (e) => {
+        console.log('📡 SSE: Slot hold released', JSON.parse(e.data));
+        refreshBookingsOnly();
+      });
+      
+      eventSource.onerror = () => {
+        eventSource.close();
+        reconnectTimer = setTimeout(connect, 5000);
+      };
+    };
+    
+    connect();
+    
+    return () => {
+      supabase.removeChannel(channel);
+      if (eventSource) eventSource.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, []); // Connect once on mount
 
   // --- Drag-to-create: global mousemove/mouseup ---
   useEffect(() => {
@@ -472,6 +579,11 @@ function Bookings({ data }) {
   const handleCardDragStart = (e, booking) => {
     e.stopPropagation();
     e.preventDefault();
+
+    // Disable drag/click for guest slot holds
+    const isHold = booking.status === 'pending' && booking.internal_note && booking.internal_note.includes('Khách đang đặt');
+    if (isHold) return;
+
     const card = e.currentTarget;
     const col = card.closest('.cal-staff-column');
     if (!col) return;
@@ -882,6 +994,10 @@ function Bookings({ data }) {
   };
 
   const handleOpenDetail = async (booking) => {
+    // Prevent opening detail view for temporary slot holds
+    const isHold = booking.status === 'pending' && booking.internal_note && booking.internal_note.includes('Khách đang đặt');
+    if (isHold) return;
+
     setDetailModal(booking);
 
     setDetailEdit({
@@ -1062,7 +1178,7 @@ function Bookings({ data }) {
   const todayStr = toDateStr(new Date());
 
   return (
-    <div className='full-view full-view-bookings' style={{ '--staff-count': employees.length }}>
+    <div className='full-view full-view-bookings' style={{ '--staff-count': loading ? 3 : (employees.length || 1) }}>
       {/* Calendar Toolbar */}
       <div className="cal-toolbar">
         <div className="cal-toolbar-wrap">
@@ -1099,18 +1215,26 @@ function Bookings({ data }) {
           <div className="cal-staff-header-wrap">
             {/* Header row */}
             <div className="cal-staff-header"></div>
-            {employees.map(emp => {
-              const empSched = employeeSchedules.find(s => s.employee_id === emp.id);
-              const isAvailable = empSched && !empSched.is_day_off;
-              return (
-                <div
-                  key={emp.id}
-                  className={`cal-staff-header ${isAvailable ? 'available' : 'unavailable'}`}
-                >
-                  {emp.name}
+            {loading ? (
+              Array.from({ length: 3 }).map((_, idx) => (
+                <div key={`skeleton-hdr-${idx}`} className="cal-staff-header available">
+                  <div className="skeleton-shimmer-light" style={{ width: '80px', height: '16px', borderRadius: '4px' }} />
                 </div>
-              );
-            })}
+              ))
+            ) : (
+              employees.map(emp => {
+                const empSched = employeeSchedules.find(s => s.employee_id === emp.id);
+                const isAvailable = empSched && !empSched.is_day_off;
+                return (
+                  <div
+                    key={emp.id}
+                    className={`cal-staff-header ${isAvailable ? 'available' : 'unavailable'}`}
+                  >
+                    {emp.name}
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>
@@ -1125,7 +1249,11 @@ function Bookings({ data }) {
             <div className="cal-time-column">
               {HOURS.map(hour => (
                 <div key={hour} className="cal-time-slot">
-                  {String(hour).padStart(2, '0')}:00
+                  {(() => {
+                    const h12 = hour % 12 === 0 ? 12 : hour % 12;
+                    const period = hour < 12 ? 'AM' : 'PM';
+                    return `${String(h12).padStart(2, '0')}:00 ${period}`;
+                  })()}
                 </div>
               ))}
             </div>
@@ -1141,35 +1269,90 @@ function Bookings({ data }) {
                   height: `${ROW_HEIGHT}px`
                 }}
               >
-                {hoverInfo.time}
+                {formatTime(hoverInfo.time)}
               </div>
             )}
 
             {/* Staff columns */}
-            {employees.map(emp => {
-              const empSched = employeeSchedules.find(s => s.employee_id === emp.id);
-              const isAvailable = empSched && !empSched.is_day_off;
-
-              return (
+            {loading ? (
+              // Calendar View Skeleton (3 columns)
+              Array.from({ length: 3 }).map((_, colIdx) => (
                 <div
-                  key={emp.id}
-                  className={`cal-staff-column ${isAvailable ? 'available' : 'unavailable'}`}
-                  data-staff-id={emp.id}
-                  data-staff-name={emp.name}
-                  style={{
-                    '--shift-start': isAvailable ? `${timeToPixels(String(empSched.start_time).substring(0, 5))}px` : '0px',
-                    '--shift-end': isAvailable ? `${timeToPixels(String(empSched.end_time).substring(0, 5))}px` : '0px'
-                  }}
-                  onMouseDown={(e) => handleDragStart(e, emp)}
-                  onMouseMove={(e) => handleColumnHover(e, emp)}
-                  onMouseLeave={() => { if (!dragInfo) setHoverInfo(null); }}
+                  key={`skeleton-col-${colIdx}`}
+                  className="cal-staff-column available skeleton-col"
+                  style={{ minHeight: '1200px', backgroundColor: '#ffffff', opacity: 0.8 }}
                 >
+                  <div
+                    className="skeleton-shimmer-light"
+                    style={{
+                      position: 'absolute',
+                      top: '120px',
+                      left: '8px',
+                      right: '8px',
+                      height: '90px',
+                      borderRadius: '8px',
+                      opacity: 0.6
+                    }}
+                  />
+                  <div
+                    className="skeleton-shimmer-light"
+                    style={{
+                      position: 'absolute',
+                      top: '320px',
+                      left: '8px',
+                      right: '8px',
+                      height: '140px',
+                      borderRadius: '8px',
+                      opacity: 0.6
+                    }}
+                  />
+                  <div
+                    className="skeleton-shimmer-light"
+                    style={{
+                      position: 'absolute',
+                      top: '650px',
+                      left: '8px',
+                      right: '8px',
+                      height: '80px',
+                      borderRadius: '8px',
+                      opacity: 0.6
+                    }}
+                  />
+                </div>
+              ))
+            ) : (
+              employees.map(emp => {
+                const empSched = employeeSchedules.find(s => s.employee_id === emp.id);
+                const isAvailable = empSched && !empSched.is_day_off;
+
+                return (
+                  <div
+                    key={emp.id}
+                    className={`cal-staff-column ${isAvailable ? 'available' : 'unavailable'}`}
+                    data-staff-id={emp.id}
+                    data-staff-name={emp.name}
+                    style={{
+                      '--shift-start': isAvailable ? `${timeToPixels(String(empSched.start_time).substring(0, 5))}px` : '0px',
+                      '--shift-end': isAvailable ? `${timeToPixels(String(empSched.end_time).substring(0, 5))}px` : '0px'
+                    }}
+                    onMouseDown={(e) => handleDragStart(e, emp)}
+                    onMouseMove={(e) => handleColumnHover(e, emp)}
+                    onMouseLeave={() => { if (!dragInfo) setHoverInfo(null); }}
+                  >
                   {/* Now Line (rendered in each column or once for the whole grid) */}
                   {toDateStr(currentDate) === toDateStr(now) && (
                     <div className="cal-now-line" style={{ top: `${(timeToMinutes(`${now.getHours()}:${now.getMinutes()}`) - OPEN_HOUR * 60) / 60 * 100}px` }}>
                       {/* We only show badge on the first column for cleaner UI */}
                       {employees.indexOf(emp) === 0 && (
-                        <div className="cal-now-badge">{now.getHours()}:{String(now.getMinutes()).padStart(2, '0')}</div>
+                        <div className="cal-now-badge">
+                          {(() => {
+                            const h = now.getHours();
+                            const m = String(now.getMinutes()).padStart(2, '0');
+                            const h12 = h % 12 === 0 ? 12 : h % 12;
+                            const period = h < 12 ? 'AM' : 'PM';
+                            return `${String(h12).padStart(2, '0')}:${m} ${period}`;
+                          })()}
+                        </div>
                       )}
                     </div>
                   )}
@@ -1183,10 +1366,12 @@ function Bookings({ data }) {
                     const cardBg = getBookingColor(b);
                     const textColor = '#555555';
 
+                    const isHold = b.status === 'pending' && b.internal_note && b.internal_note.includes('Khách đang đặt');
+
                     return (
                       <div
                         key={b.id}
-                        className={`cal-booking-card-wrapper${cardDrag && cardDrag.booking.id === b.id ? ' is-original-placeholder' : ''}${b.status === 'pending' && b.internal_note ? ' is-spam-warning' : ''}`}
+                        className={`cal-booking-card-wrapper${cardDrag && cardDrag.booking.id === b.id ? ' is-original-placeholder' : ''}${b.status === 'pending' && b.internal_note ? ' is-spam-warning' : ''}${isHold ? ' is-hold-disabled' : ''}`}
                         style={{
                           position: 'absolute',
                           top: `${top}px`,
@@ -1241,7 +1426,7 @@ function Bookings({ data }) {
                           {b.notes ? <img src={noteIcon} alt='note icon' className="cal-booking-icon" /> : null}
                           <div className="cal-booking-name">{b.customers?.name}</div>
                           <div className="cal-booking-service">{b.services?.name}</div>
-                          <div className="cal-booking-time">{ghostStart} - {ghostEnd}</div>
+                          <div className="cal-booking-time">{formatTime(ghostStart)} - {formatTime(ghostEnd)}</div>
                         </div>
                       </div>
                     );
@@ -1258,13 +1443,14 @@ function Bookings({ data }) {
                         className="cal-drag-selection"
                         style={{ top: `${top}px`, height: `${height}px` }}
                       >
-                        <span className="cal-drag-time">{startT} – {endT}</span>
+                        <span className="cal-drag-time">{formatTime(startT)} – {formatTime(endT)}</span>
                       </div>
                     );
                   })()}
                 </div>
               );
-            })}
+            })
+          )}
           </div>
         </div>
       ) : (
@@ -1288,7 +1474,22 @@ function Bookings({ data }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {bookings.length === 0 ? (
+                  {loading ? (
+                    Array.from({ length: 5 }).map((_, idx) => (
+                      <tr key={`skeleton-row-${idx}`}>
+                        <td colSpan="9" style={{ padding: '16px 24px' }}>
+                          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                            <div className="skeleton-shimmer-light" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div className="skeleton-shimmer-light" style={{ width: '30%', height: '16px', borderRadius: '4px' }} />
+                              <div className="skeleton-shimmer-light" style={{ width: '50%', height: '12px', borderRadius: '4px' }} />
+                            </div>
+                            <div className="skeleton-shimmer-light" style={{ width: '80px', height: '24px', borderRadius: '12px' }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : bookings.length === 0 ? (
                     <tr>
                       <td colSpan="9">
                         <div className="empty-state">
@@ -1329,7 +1530,24 @@ function Bookings({ data }) {
           ) : (
             /* Mobile Card Layout */
             <div className="booking-list-mobile">
-              {bookings.length === 0 ? (
+              {loading ? (
+                Array.from({ length: 4 }).map((_, idx) => (
+                  <div key={`skeleton-card-${idx}`} className="booking-card-mobile" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div className="skeleton-shimmer-light" style={{ width: '120px', height: '16px', borderRadius: '4px' }} />
+                      <div className="skeleton-shimmer-light" style={{ width: '80px', height: '16px', borderRadius: '4px' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <div className="skeleton-shimmer-light" style={{ width: '80px', height: '12px', borderRadius: '4px' }} />
+                      <div className="skeleton-shimmer-light" style={{ width: '60px', height: '12px', borderRadius: '4px' }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div className="skeleton-shimmer-light" style={{ width: '50px', height: '20px', borderRadius: '10px' }} />
+                      <div className="skeleton-shimmer-light" style={{ width: '60px', height: '20px', borderRadius: '4px' }} />
+                    </div>
+                  </div>
+                ))
+              ) : bookings.length === 0 ? (
                 <div className="empty-state">
                   <FiCalendar size={32} />
                   <h4>Không có lịch hẹn</h4>
@@ -1338,12 +1556,14 @@ function Bookings({ data }) {
               ) : (
                 bookings
                   .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                  .map(b => (
-                    <div
-                      key={b.id}
-                      className={`booking-card-mobile${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}`}
-                      onClick={() => handleOpenDetail(b)}
-                    >
+                  .map(b => {
+                    const isHold = b.status === 'pending' && b.internal_note && b.internal_note.includes('Khách đang đặt');
+                    return (
+                      <div
+                        key={b.id}
+                        className={`booking-card-mobile${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}${isHold ? ' is-hold-disabled' : ''}`}
+                        onClick={() => handleOpenDetail(b)}
+                      >
                       <div className="booking-card-mobile-header">
                         <span className="booking-card-mobile-customer">{b.customers?.name || '-'}</span>
                         <span className="booking-card-mobile-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</span>
@@ -1361,7 +1581,8 @@ function Bookings({ data }) {
                       </div>
                       {b.internal_note && <div className="fs-11 text-warning-orange">{b.internal_note}</div>}
                     </div>
-                  ))
+                  );
+                })
               )}
             </div>
           )}

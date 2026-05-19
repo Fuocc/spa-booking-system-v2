@@ -95,7 +95,8 @@
 @media (max-width: 768px) {
   .card {
     box-shadow: none;
-    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: unset;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   }
 }
 

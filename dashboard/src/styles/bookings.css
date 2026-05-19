@@ -1171,12 +1171,11 @@
 
   .cal-toolbar {
     position: sticky;
-    top: var(--mobile-header-height, 56px);
   }
 
   .cal-toolbar-wrap {
     flex-direction: column;
-    padding: 12px 16px;
+    padding: 56px 16px 12px;
     gap: 12px;
     align-items: stretch;
   }
@@ -1329,4 +1328,57 @@
     font-size: 13px;
     width: 100%;
   }
+}
+
+/* ============================================
+   Shimmering Skeleton Loader Animations
+   ============================================ */
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg,
+      rgba(255, 255, 255, 0.03) 25%,
+      rgba(255, 255, 255, 0.08) 37%,
+      rgba(255, 255, 255, 0.03) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-loading-keyframes 1.4s ease infinite;
+}
+
+.skeleton-shimmer-light {
+  background: linear-gradient(90deg,
+      rgba(0, 0, 0, 0.04) 25%,
+      rgba(0, 0, 0, 0.08) 37%,
+      rgba(0, 0, 0, 0.04) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-loading-keyframes 1.4s ease infinite;
+}
+
+@keyframes skeleton-loading-keyframes {
+  0% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* ============================================
+   Disabled Slot Hold Bookings (Khách Đang Đặt)
+   ============================================ */
+
+.cal-booking-card-wrapper.is-hold-disabled {
+  cursor: not-allowed !important;
+}
+
+.cal-booking-card-wrapper.is-hold-disabled .cal-booking-card {
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  border: 1px dashed rgba(0, 0, 0, 0.15) !important;
+  filter: grayscale(15%);
+}
+
+.booking-card-mobile.is-hold-disabled {
+  cursor: not-allowed !important;
+  opacity: 0.8;
+  border-left: 4px dashed #ccc !important;
 }

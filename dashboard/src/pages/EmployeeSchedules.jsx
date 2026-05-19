@@ -21,6 +21,18 @@ function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+const formatTime12h = (t) => {
+  if (!t) return '';
+  const cleanTime = t.substring(0, 5);
+  const [hStr, mStr] = cleanTime.split(':');
+  const h = parseInt(hStr);
+  if (isNaN(h)) return cleanTime;
+  const period = h < 12 ? 'AM' : 'PM';
+  let h12 = h % 12;
+  if (h12 === 0) h12 = 12;
+  return `${String(h12).padStart(2, '0')}:${mStr} ${period}`;
+};
+
 const DAY_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DAY_FULL_NAMES = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
@@ -33,7 +45,7 @@ function EmployeeSchedules() {
   const [modalOpen, setModalOpen] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
     id: null,
-    employee_id: '', start_time: '10:00', end_time: '22:00',
+    employee_id: '', start_time: '09:00', end_time: '22:00',
     is_day_off: false, note: '', selectedDays: []
   });
 
@@ -101,7 +113,7 @@ function EmployeeSchedules() {
       setScheduleForm({
         id: existingSched.id,
         employee_id: existingSched.employee_id,
-        start_time: existingSched.start_time?.substring(0, 5) || '10:00',
+        start_time: existingSched.start_time?.substring(0, 5) || '09:00',
         end_time: existingSched.end_time?.substring(0, 5) || '22:00',
         is_day_off: existingSched.is_day_off,
         note: existingSched.note || '',
@@ -111,7 +123,7 @@ function EmployeeSchedules() {
       setScheduleForm({
         id: null,
         employee_id: empId || employees[0]?.id || '',
-        start_time: '10:00', end_time: '22:00',
+        start_time: '09:00', end_time: '22:00',
         is_day_off: false, note: '',
         selectedDays: dateStr ? [dateStr] : []
       });
@@ -169,7 +181,7 @@ function EmployeeSchedules() {
       return;
     }
 
-    if (!confirm('Tạo lịch mặc định 10:00 - 22:00 cho TẤT CẢ nhân viên trong 30 ngày tới?')) return;
+    if (!confirm('Tạo lịch mặc định 09:00 AM - 10:00 PM cho TẤT CẢ nhân viên trong 30 ngày tới?')) return;
 
     setCreatingDefault(true);
     try {
@@ -184,7 +196,7 @@ function EmployeeSchedules() {
         await createBulkSchedule({
           employee_id: emp.id,
           dates,
-          start_time: '10:00',
+          start_time: '09:00',
           end_time: '22:00',
           is_day_off: false,
           note: null
@@ -212,7 +224,7 @@ function EmployeeSchedules() {
         </div>
         <div className="d-flex gap-8" style={isMobile ? { flexDirection: 'column', width: '100%' } : {}}>
           <button className="btn btn-secondary" onClick={createDefaultSchedulesFor30Days} disabled={creatingDefault} style={isMobile ? { fontSize: 12 } : {}}>
-            {creatingDefault ? 'Đang tạo...' : 'Tạo lịch mặc định (10:00-22:00)'}
+            {creatingDefault ? 'Đang tạo...' : 'Tạo lịch mặc định (9:00AM - 10:00PM)'}
           </button>
           <button className="btn btn-primary" onClick={() => openScheduleModal()}>
             <FiPlus /> Xếp lịch
@@ -286,7 +298,7 @@ function EmployeeSchedules() {
                               {sched.is_day_off ? (
                                 <span>Nghỉ</span>
                               ) : (
-                                <span>{sched.start_time?.substring(0, 5)} - {sched.end_time?.substring(0, 5)}</span>
+                                <span>{formatTime12h(sched.start_time)} - {formatTime12h(sched.end_time)}</span>
                               )}
                               {sched.note && <div className="schedule-note">{sched.note}</div>}
                             </div>
@@ -334,7 +346,7 @@ function EmployeeSchedules() {
                         <span className={`schedule-mobile-day-num${isToday ? ' today' : ''}`}>{d.getDate()}</span>
                         {sched ? (
                           <span className={`schedule-mobile-day-status ${sched.is_day_off ? 'day-off' : 'working'}`}>
-                            {sched.is_day_off ? 'Nghỉ' : `${sched.start_time?.substring(0, 5)}-${sched.end_time?.substring(0, 5)}`}
+                            {sched.is_day_off ? 'Nghỉ' : `${formatTime12h(sched.start_time)} - ${formatTime12h(sched.end_time)}`}
                           </span>
                         ) : (
                           <span className="schedule-mobile-day-status empty">+</span>

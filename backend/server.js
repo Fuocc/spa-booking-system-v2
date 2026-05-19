@@ -6,10 +6,30 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ---- SSE (Server-Sent Events) client management ----
+const sseClients = [];
+
+function broadcastSSE(event, data) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach((res, index) => {
+    try {
+      res.write(payload);
+    } catch (err) {
+      sseClients.splice(index, 1);
+    }
+  });
+}
+
+// Make broadcastSSE available globally for route modules
+app.set('broadcastSSE', broadcastSSE);
+
 // CORS configuration
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  /^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/, // Allow local 192.168.x.x Wi-Fi IPs
+  /^http:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/,   // Allow local 10.x.x.x Wi-Fi IPs
+  /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+(:\d+)?$/, // Allow local 172.16.x.x-172.31.x.x Wi-Fi IPs
   /\.netlify\.app$/,
   'https://spa-booking-system-v2.netlify.app/'
 ];
@@ -17,9 +37,18 @@ const allowedOrigins = [
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.netlify.app')) {
+    
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (allowedOrigin instanceof RegExp) {
+        return allowedOrigin.test(origin);
+      }
+      return allowedOrigin === origin;
+    });
+
+    if (isAllowed || origin.endsWith('.netlify.app')) {
       callback(null, true);
     } else {
+      console.log('CORS Blocked Origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -46,6 +75,49 @@ app.use('/api/employee-schedules', require('./routes/employeeSchedules'));
 app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/settings', require('./routes/settings'));
 
+// Trigger endpoint to broadcast SSE events from external servers (e.g. landing page backend)
+app.post('/api/events/trigger', (req, res) => {
+  const { event, data } = req.body;
+  if (event) {
+    broadcastSSE(event, data);
+    console.log(`📡 SSE Triggered externally: event=${event}`);
+    return res.json({ success: true });
+  }
+  res.status(400).json({ error: 'Missing event name' });
+});
+
+// ---- SSE Endpoint for Dashboard Live Updates ----
+app.get('/api/events', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+
+  // Send initial connection event
+  res.write('event: connected\ndata: {"status":"connected"}\n\n');
+
+  sseClients.push(res);
+  console.log(`📡 SSE client connected. Total: ${sseClients.length}`);
+
+  // Heartbeat every 30s to keep connection alive
+  const heartbeat = setInterval(() => {
+    try {
+      res.write('event: heartbeat\ndata: {}\n\n');
+    } catch (_) {
+      clearInterval(heartbeat);
+    }
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    const idx = sseClients.indexOf(res);
+    if (idx !== -1) sseClients.splice(idx, 1);
+    console.log(`📡 SSE client disconnected. Total: ${sseClients.length}`);
+  });
+});
+
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
@@ -55,7 +127,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Fallback to serve frontend
-app.get('/', (req, res) => {
+app.get(['/', '/book'], (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
 
@@ -63,8 +135,46 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ error: `Route ${req.method} ${req.originalUrl} not found` });
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ YOi Booking API running on http://localhost:${PORT}`);
+const os = require('os');
+
+// Helper to discover all active local IPv4 addresses
+function getLocalIps() {
+  const interfaces = os.networkInterfaces();
+  const results = [];
+  
+  for (const name of Object.keys(interfaces)) {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('loopback')) {
+      continue;
+    }
+    
+    for (const net of interfaces[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        results.push({ name, address: net.address });
+      }
+    }
+  }
+  return results;
+}
+
+const localIps = getLocalIps();
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n======================================================`);
+  console.log(`✅ YOi Booking API running on port ${PORT}`);
+  console.log(`🏠 Host Machine: http://localhost:${PORT}`);
   console.log(`📋 Frontend: http://localhost:${PORT}`);
-  console.log(`📊 Dashboard: Run separately with Vite`);
+  console.log(`------------------------------------------------------`);
+  console.log(`📱 Access from Mobile/Tablet on the SAME Wi-Fi network:`);
+  
+  if (localIps.length === 0) {
+    console.log(`   (Không tìm thấy mạng WiFi, hãy kiểm tra kết nối)`);
+  } else {
+    localIps.forEach(ip => {
+      console.log(`   👉 Mạng [${ip.name}]:`);
+      console.log(`      🏠 API Base: http://${ip.address}:${PORT}`);
+      console.log(`      📋 Frontend: http://${ip.address}:${PORT}`);
+    });
+  }
+  console.log(`======================================================\n`);
 });

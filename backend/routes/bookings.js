@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../supabaseClient');
 
+// Helper to get broadcastSSE from the app instance
+function getBroadcast(req) {
+  return req.app.get('broadcastSSE') || (() => {});
+}
+
 // Normalize Vietnamese diacritics for Latin search
 const normalize = (str) => (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -16,7 +21,7 @@ router.get('/', async (req, res) => {
       .select(`
         *,
         customers(id, name, phone, email, habits),
-        services(name, duration_minutes, price),
+        services(name, duration_minutes, price, color),
         employees(name),
         beds(name),
         branches(name)
@@ -48,7 +53,7 @@ router.get('/:id', async (req, res) => {
       .select(`
         *,
         customers(id, name, phone, email, habits),
-        services(name, duration_minutes, price),
+        services(name, duration_minutes, price, color),
         employees(name),
         beds(name),
         branches(name)
@@ -156,6 +161,10 @@ router.put('/:id', async (req, res) => {
       .single();
 
     if (upErr) throw upErr;
+
+    // Broadcast SSE for live dashboard updates
+    const broadcast = getBroadcast(req);
+    broadcast('booking.updated', updated);
 
     res.json(updated);
   } catch (err) {
@@ -476,6 +485,12 @@ router.post('/', async (req, res) => {
       console.error('Webhook fire error:', err.message)
     );
 
+    // Broadcast SSE for live dashboard updates
+    const broadcast = getBroadcast(req);
+    createdBookings.forEach(b => {
+      broadcast('booking.created', b);
+    });
+
     res.status(201).json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -534,6 +549,10 @@ router.put('/:id/status', async (req, res) => {
       }
     }
 
+    // Broadcast SSE for live dashboard updates
+    const broadcast = getBroadcast(req);
+    broadcast('booking.updated', data);
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -551,6 +570,11 @@ router.delete('/:id', async (req, res) => {
       .eq('id', req.params.id);
 
     if (error) throw error;
+
+    // Broadcast SSE for live dashboard updates
+    const broadcast = getBroadcast(req);
+    broadcast('booking.deleted', { id: req.params.id });
+
     res.json({ message: 'Booking deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -17,10 +17,10 @@ const TimePickerInput = ({ value, onChange }) => {
 
     if (isBlur) {
       if (hh < 10) { hh = 10; mm = 0; }
-      if (hh > 20) { hh = 20; mm = 0; }
-      if (hh === 20 && mm > 0) mm = 0;
+      if (hh > 22) { hh = 22; mm = 0; }
+      if (hh === 22 && mm > 0) mm = 0;
     } else {
-      if (hh > 20) hh = 20;
+      if (hh > 22) hh = 22;
     }
 
     onChange(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);

@@ -6,14 +6,14 @@ import '../styles/services.css';
 
 const CATEGORIES = ["Gội Đầu", "Massage", "Combo", "4 Tay", "Dịch vụ thêm"];
 const COLORS = [
-  '#25836B', // Teal
-  '#E6A02A', // Orange
-  '#EDD3A9', // Yellow/Gold
-  '#F8F3EC', // Cream
-  '#DDD6FE', // Light Purple
-  '#FECDD3', // Light Pink
-  '#BBF7D0', // Light Green
-  '#BBC6C0'  // Grey
+  '#EDF4EB', // Green
+  '#F8EDDD', // Orange
+  '#F1F1EF',  // Grey
+  '#F8F3EC', // Light Yellow
+  '#ECF5F8', // Blue
+  '#EEECF8', // Purple
+  '#F8ECF4', // Pink
+  '#FEECEC' // Light Pink
 ];
 
 function Services() {
