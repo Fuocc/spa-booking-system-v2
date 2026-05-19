@@ -1,16 +1,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { FiUsers, FiUserCheck, FiScissors, FiCalendar, FiMapPin, FiLogOut, FiClock, FiSettings, FiMenu, FiX, FiBell } from 'react-icons/fi';
 import { Avatar, Circle, Float } from "@chakra-ui/react"
 import { supabase } from '../supabaseClient';
+import { useWebPush } from '../hooks/useWebPush';
 import '../styles/sidebar.css';
 
 
 function Sidebar({ user, onLogout }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const role = user?.user_metadata?.role || user?.app_metadata?.role;
+
+  // ---- VAPID Web Push Notification Hook ----
+  const { isSupported, isSubscribed, loading, subscribe, unsubscribe } = useWebPush();
+
+  // Tự động bật đẩy trình duyệt ngầm dưới nền khi trang tải
+  useEffect(() => {
+    if (isSupported && !isSubscribed && !loading) {
+      if (Notification.permission !== 'denied') {
+        subscribe().catch(err => console.warn("Tự động đăng ký Web Push thất bại:", err));
+      }
+    }
+  }, [isSupported, isSubscribed, loading, subscribe]);
 
   // ---- Notifications State & Real-time Listeners ----
   const [notifications, setNotifications] = useState(() => {
@@ -38,10 +52,25 @@ function Sidebar({ user, onLogout }) {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
+  // Dedup set: prevent same booking from being processed by both Supabase Realtime & SSE
+  const processedBookingsRef = useRef(new Set());
+
   const handleNewBooking = useCallback((booking) => {
     // 1) Filter out temporary holds ("Khách đang đặt")
     const isHold = booking.status === 'pending' && booking.internal_note?.includes('[Khách đang đặt]');
     if (isHold) return;
+
+    // Dedup: skip if this booking was already processed recently
+    const bookingId = booking.id;
+    if (bookingId && processedBookingsRef.current.has(bookingId)) {
+      console.log('🔕 Skipping duplicate notification for booking:', bookingId);
+      return;
+    }
+    if (bookingId) {
+      processedBookingsRef.current.add(bookingId);
+      // Auto-cleanup after 10 seconds to prevent memory leak
+      setTimeout(() => processedBookingsRef.current.delete(bookingId), 10000);
+    }
 
     // 2) Parse customer, service and branch details
     const customerName = booking.customers?.name || booking.customer_name || 'Khách Lạ';
@@ -67,17 +96,87 @@ function Sidebar({ user, onLogout }) {
       console.warn("Sound blocked by browser user gesture policies", e);
     }
 
+    // Helper to format booking date relatively
+    const getRelativeDateLabel = (dateStr) => {
+      if (!dateStr) return '';
+      const bookingDate = new Date(dateStr + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+      
+      const bookingTime = bookingDate.getTime();
+      const todayTime = today.getTime();
+      const tomorrowTime = tomorrow.getTime();
+      
+      if (bookingTime === todayTime) {
+        return 'hôm nay';
+      } else if (bookingTime === tomorrowTime) {
+        return 'ngày mai';
+      } else {
+        const day = String(bookingDate.getDate()).padStart(2, '0');
+        const month = String(bookingDate.getMonth() + 1).padStart(2, '0');
+        return `${day}/${month}`;
+      }
+    };
+
+    const relativeDate = getRelativeDateLabel(booking.booking_date);
+    const datePhrase = relativeDate ? ` vào ${relativeDate}` : '';
+
     // 3) Create clean notification card
     const newNotif = {
       id: `${booking.id || Date.now()}-${Math.random()}`,
+      bookingId: booking.id,
+      bookingDate: booking.booking_date,
       title: 'Lịch hẹn mới! 🎉',
-      message: `${customerName} vừa đặt lịch ${serviceName} tại ${branchName} lúc ${startTime.substring(0, 5)}`,
+      message: `${customerName} vừa đặt lịch ${serviceName} tại ${branchName} lúc ${startTime.substring(0, 5)}${datePhrase}`,
       time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       read: false
     };
 
+    // NOTE: Do NOT show native `new Notification()` here.
+    // VAPID Web Push via sw.js already handles OS-level push notifications.
+    // Creating a native Notification here would cause duplicate notifications.
+
     setNotifications(prev => [newNotif, ...prev].slice(0, 50));
   }, []);
+
+  // Request browser permission for native push notifications on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  const handleNotifClick = (n) => {
+    markAsRead(n.id);
+    setPanelOpen(false);
+    
+    if (n.bookingId && n.bookingDate) {
+      // Save details to sessionStorage
+      sessionStorage.setItem('goto_booking', JSON.stringify({
+        bookingId: n.bookingId,
+        bookingDate: n.bookingDate
+      }));
+      
+      // Dispatch custom window event
+      const event = new CustomEvent('goto-booking', {
+        detail: {
+          bookingId: n.bookingId,
+          bookingDate: n.bookingDate
+        }
+      });
+      window.dispatchEvent(event);
+      
+      // Navigate to the list/calendar view if we aren't already there
+      if (location.pathname !== '/') {
+        navigate('/');
+      }
+    }
+  };
 
   useEffect(() => {
     // 1) Supabase Realtime for cross-port guest booking creations
@@ -344,7 +443,7 @@ function Sidebar({ user, onLogout }) {
                   <div 
                     key={n.id} 
                     className={`notif-item${!n.read ? ' unread' : ''}`}
-                    onClick={() => markAsRead(n.id)}
+                    onClick={() => handleNotifClick(n)}
                   >
                     <div className="notif-item-header">
                       <span className="notif-item-title">{n.title}</span>

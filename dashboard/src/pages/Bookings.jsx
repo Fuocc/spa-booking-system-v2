@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { FiPlus, FiChevronLeft, FiChevronRight, FiCalendar, FiList, FiMoreVertical } from 'react-icons/fi';
+import { FiPlus, FiChevronLeft, FiChevronRight, FiCalendar, FiList, FiMoreVertical, FiX, FiAlertTriangle } from 'react-icons/fi';
 import { HiOutlineChevronLeft, HiOutlineChevronRight } from "react-icons/hi";
 import { toast } from 'react-toastify';
 import TimePickerInput from '../components/TimePickerInput';
@@ -275,23 +275,23 @@ function Bookings({ data }) {
     // 2) SSE Connection (for backend events on this server)
     const API_BASE = import.meta.env.VITE_API_BASE;
     const sseUrl = API_BASE.replace(/\/api$/, '') + '/api/events';
-    
+
     let eventSource;
     let reconnectTimer;
-    
+
     const connect = () => {
       eventSource = new EventSource(sseUrl);
-      
+
       eventSource.addEventListener('booking.created', (e) => {
         console.log('📡 SSE: New booking created', JSON.parse(e.data));
         refreshBookingsOnly();
       });
-      
+
       eventSource.addEventListener('booking.updated', (e) => {
         console.log('📡 SSE: Booking updated', JSON.parse(e.data));
         refreshBookingsOnly();
       });
-      
+
       eventSource.addEventListener('booking.deleted', (e) => {
         console.log('📡 SSE: Booking deleted', JSON.parse(e.data));
         refreshBookingsOnly();
@@ -306,21 +306,86 @@ function Bookings({ data }) {
         console.log('📡 SSE: Slot hold released', JSON.parse(e.data));
         refreshBookingsOnly();
       });
-      
+
       eventSource.onerror = () => {
         eventSource.close();
         reconnectTimer = setTimeout(connect, 5000);
       };
     };
-    
+
     connect();
-    
+
     return () => {
       supabase.removeChannel(channel);
       if (eventSource) eventSource.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, []); // Connect once on mount
+
+  // Effect to handle navigating/scrolling to a specific booking from a notification
+  useEffect(() => {
+    const handleGotoBooking = (detail) => {
+      if (!detail || !detail.bookingId || !detail.bookingDate) return;
+
+      // 1. Change the date of the calendar grid
+      const targetDate = new Date(detail.bookingDate + 'T00:00:00');
+      setCurrentDate(targetDate);
+
+      // 2. Wait for the state to update, the new date's bookings to load and the DOM to render
+      // We can poll the DOM for the booking card element
+      let attempts = 0;
+      const interval = setInterval(() => {
+        const cardEl = document.getElementById(`booking-card-${detail.bookingId}`);
+        if (cardEl) {
+          clearInterval(interval);
+          // Scroll to the card
+          cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+          // Add highlighting class
+          cardEl.classList.add('highlight-appointment');
+
+          // Remove highlight after 3 seconds
+          setTimeout(() => {
+            cardEl.classList.remove('highlight-appointment');
+          }, 3000);
+        }
+        attempts++;
+        if (attempts > 30) { // Timeout after 3 seconds (30 * 100ms)
+          clearInterval(interval);
+        }
+      }, 100);
+    };
+
+    // Check sessionStorage on mount and when bookings are loaded
+    const checkSessionStorage = () => {
+      const stored = sessionStorage.getItem('goto_booking');
+      if (stored) {
+        try {
+          const detail = JSON.parse(stored);
+          sessionStorage.removeItem('goto_booking'); // Clear so we don't trigger again on subsequent renders
+          handleGotoBooking(detail);
+        } catch (e) {
+          console.error("Error parsing goto_booking", e);
+        }
+      }
+    };
+
+    // Listen to custom event
+    const onGotoEvent = (e) => {
+      handleGotoBooking(e.detail);
+    };
+
+    window.addEventListener('goto-booking', onGotoEvent);
+
+    // We also want to check sessionStorage when bookings array changes (which means loading has finished)
+    if (!loading && bookings.length > 0) {
+      checkSessionStorage();
+    }
+
+    return () => {
+      window.removeEventListener('goto-booking', onGotoEvent);
+    };
+  }, [loading, bookings]);
 
   // --- Drag-to-create: global mousemove/mouseup ---
   useEffect(() => {
@@ -1126,6 +1191,41 @@ function Bookings({ data }) {
     }
   };
 
+  const handleDismissWarning = async (e, booking) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (!booking) return;
+
+    try {
+      const bookingUpdate = {
+        service_id: booking.service_id || booking.services?.id || '',
+        branch_id: booking.branch_id || booking.branches?.id || '',
+        employee_id: booking.employee_id || booking.employees?.id || '',
+        booking_date: booking.booking_date || '',
+        start_time: (booking.start_time || '').substring(0, 5),
+        end_time: (booking.end_time || '').substring(0, 5),
+        customer_id: booking.customer_id || booking.customers?.id || '',
+        notes: booking.notes || '',
+        internal_note: null // Clear warning
+      };
+
+      await updateBooking(booking.id, bookingUpdate);
+
+      if (detailModal && detailModal.id === booking.id) {
+        setDetailEdit(prev => ({ ...prev, internal_note: '' }));
+      }
+
+      notify('Đã tắt cảnh báo và khôi phục màu dịch vụ!');
+      loadBookings();
+    } catch (err) {
+      console.error(err);
+      alert('Không thể tắt cảnh báo: ' + err.message);
+    }
+  };
+
+
   // Date options
   const dateOptions = [];
   const today = new Date();
@@ -1339,118 +1439,123 @@ function Bookings({ data }) {
                     onMouseMove={(e) => handleColumnHover(e, emp)}
                     onMouseLeave={() => { if (!dragInfo) setHoverInfo(null); }}
                   >
-                  {/* Now Line (rendered in each column or once for the whole grid) */}
-                  {toDateStr(currentDate) === toDateStr(now) && (
-                    <div className="cal-now-line" style={{ top: `${(timeToMinutes(`${now.getHours()}:${now.getMinutes()}`) - OPEN_HOUR * 60) / 60 * 100}px` }}>
-                      {/* We only show badge on the first column for cleaner UI */}
-                      {employees.indexOf(emp) === 0 && (
-                        <div className="cal-now-badge">
-                          {(() => {
-                            const h = now.getHours();
-                            const m = String(now.getMinutes()).padStart(2, '0');
-                            const h12 = h % 12 === 0 ? 12 : h % 12;
-                            const period = h < 12 ? 'AM' : 'PM';
-                            return `${String(h12).padStart(2, '0')}:${m} ${period}`;
-                          })()}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    {/* Now Line (rendered in each column or once for the whole grid) */}
+                    {toDateStr(currentDate) === toDateStr(now) && (
+                      <div className="cal-now-line" style={{ top: `${(timeToMinutes(`${now.getHours()}:${now.getMinutes()}`) - OPEN_HOUR * 60) / 60 * 100}px` }}>
+                        {/* We only show badge on the first column for cleaner UI */}
+                        {employees.indexOf(emp) === 0 && (
+                          <div className="cal-now-badge">
+                            {(() => {
+                              const h = now.getHours();
+                              const m = String(now.getMinutes()).padStart(2, '0');
+                              const h12 = h % 12 === 0 ? 12 : h % 12;
+                              const period = h < 12 ? 'AM' : 'PM';
+                              return `${String(h12).padStart(2, '0')}:${m} ${period}`;
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-                  {/* Bookings for this staff */}
-                  {bookings.filter(b => (b.employee_id === emp.id || b.employees?.id === emp.id)).map(b => {
-                    const startMin = timeToMinutes(b.start_time);
-                    const endMin = timeToMinutes(b.end_time);
-                    const top = (startMin - OPEN_HOUR * 60) / 60 * 100;
-                    const height = (endMin - startMin) / 60 * 100;
-                    const cardBg = getBookingColor(b);
-                    const textColor = '#555555';
+                    {/* Bookings for this staff */}
+                    {bookings.filter(b => (b.employee_id === emp.id || b.employees?.id === emp.id)).map(b => {
+                      const startMin = timeToMinutes(b.start_time);
+                      const endMin = timeToMinutes(b.end_time);
+                      const top = (startMin - OPEN_HOUR * 60) / 60 * 100;
+                      const height = (endMin - startMin) / 60 * 100;
+                      const cardBg = getBookingColor(b);
+                      const textColor = '#555555';
 
-                    const isHold = b.status === 'pending' && b.internal_note && b.internal_note.includes('Khách đang đặt');
+                      const isHold = b.status === 'pending' && b.internal_note && b.internal_note.includes('Khách đang đặt');
+                      const isSpamWarning = b.status === 'pending' && b.internal_note && !isHold;
 
-                    return (
-                      <div
-                        key={b.id}
-                        className={`cal-booking-card-wrapper${cardDrag && cardDrag.booking.id === b.id ? ' is-original-placeholder' : ''}${b.status === 'pending' && b.internal_note ? ' is-spam-warning' : ''}${isHold ? ' is-hold-disabled' : ''}`}
-                        style={{
-                          position: 'absolute',
-                          top: `${top}px`,
-                          width: '100%',
-                          zIndex: 10
-                        }}
-                        onMouseDown={(e) => handleCardDragStart(e, b)}
-                      >
+                      return (
                         <div
-                          className="cal-booking-card"
+                          key={b.id}
+                          id={`booking-card-${b.id}`}
+                          className={`cal-booking-card-wrapper${cardDrag && cardDrag.booking.id === b.id ? ' is-original-placeholder' : ''}${isSpamWarning ? ' is-spam-warning' : ''}${isHold ? ' is-hold-disabled' : ''}`}
                           style={{
-                            height: `calc(${height}px - 4px)`,
-                            backgroundColor: cardBg,
-                            color: textColor,
+                            position: 'absolute',
+                            top: `${top}px`,
+                            width: '100%',
+                            zIndex: 10
+                          }}
+                          onMouseDown={(e) => handleCardDragStart(e, b)}
+                        >
+                          <div
+                            className="cal-booking-card"
+                            style={{
+                              height: `calc(${height}px - 4px)`,
+                              backgroundColor: cardBg,
+                              color: textColor,
+                            }}
+                          >
+                            {b.notes ? <img src={noteIcon} alt='note icon' className="cal-booking-icon" /> : null}
+                            <div className="cal-booking-name" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {isSpamWarning && <FiAlertTriangle size={12} className="text-warning-orange" style={{ minWidth: '12px' }} />}
+                              {b.customers?.name}
+                            </div>
+                            <div className="cal-booking-service">{b.services?.name}</div>
+                            <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Card drag ghost */}
+                    {cardDrag && cardDrag.currentCol?.getAttribute('data-staff-id') === emp.id && (() => {
+                      const b = cardDrag.booking;
+                      const ghostStart = convertYToTime(cardDrag.currentTop);
+                      const ghostEnd = convertYToTime(cardDrag.currentTop + cardDrag.heightPx);
+                      const cardBg = getBookingColor(b);
+                      const textColor = '#555555';
+
+                      return (
+                        <div
+                          className="cal-booking-card-wrapper is-moving-active"
+                          style={{
+                            position: 'absolute',
+                            top: `${cardDrag.currentTop}px`,
+                            width: '100%',
+                            zIndex: 100
                           }}
                         >
-                          {b.notes ? <img src={noteIcon} alt='note icon' className="cal-booking-icon" /> : null}
-                          <div className="cal-booking-name">{b.customers?.name}</div>
-                          <div className="cal-booking-service">{b.services?.name}</div>
-                          <div className="cal-booking-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</div>
+                          <div
+                            className="cal-booking-card"
+                            style={{
+                              height: `${cardDrag.heightPx}px`,
+                              backgroundColor: cardBg,
+                              color: textColor,
+                            }}
+                          >
+                            {b.notes ? <img src={noteIcon} alt='note icon' className="cal-booking-icon" /> : null}
+                            <div className="cal-booking-name">{b.customers?.name}</div>
+                            <div className="cal-booking-service">{b.services?.name}</div>
+                            <div className="cal-booking-time">{formatTime(ghostStart)} - {formatTime(ghostEnd)}</div>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })()}
 
-                  {/* Card drag ghost */}
-                  {cardDrag && cardDrag.currentCol?.getAttribute('data-staff-id') === emp.id && (() => {
-                    const b = cardDrag.booking;
-                    const ghostStart = convertYToTime(cardDrag.currentTop);
-                    const ghostEnd = convertYToTime(cardDrag.currentTop + cardDrag.heightPx);
-                    const cardBg = getBookingColor(b);
-                    const textColor = '#555555';
-
-                    return (
-                      <div
-                        className="cal-booking-card-wrapper is-moving-active"
-                        style={{
-                          position: 'absolute',
-                          top: `${cardDrag.currentTop}px`,
-                          width: '100%',
-                          zIndex: 100
-                        }}
-                      >
+                    {/* Drag selection overlay */}
+                    {dragInfo && dragInfo.staffId === emp.id && (() => {
+                      const top = dragInfo.startY;
+                      const height = Math.max(ROW_HEIGHT, dragInfo.currentY - dragInfo.startY);
+                      const startT = convertYToTime(top);
+                      const endT = convertYToTime(top + height);
+                      return (
                         <div
-                          className="cal-booking-card"
-                          style={{
-                            height: `${cardDrag.heightPx}px`,
-                            backgroundColor: cardBg,
-                            color: textColor,
-                          }}
+                          className="cal-drag-selection"
+                          style={{ top: `${top}px`, height: `${height}px` }}
                         >
-                          {b.notes ? <img src={noteIcon} alt='note icon' className="cal-booking-icon" /> : null}
-                          <div className="cal-booking-name">{b.customers?.name}</div>
-                          <div className="cal-booking-service">{b.services?.name}</div>
-                          <div className="cal-booking-time">{formatTime(ghostStart)} - {formatTime(ghostEnd)}</div>
+                          <span className="cal-drag-time">{formatTime(startT)} – {formatTime(endT)}</span>
                         </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Drag selection overlay */}
-                  {dragInfo && dragInfo.staffId === emp.id && (() => {
-                    const top = dragInfo.startY;
-                    const height = Math.max(ROW_HEIGHT, dragInfo.currentY - dragInfo.startY);
-                    const startT = convertYToTime(top);
-                    const endT = convertYToTime(top + height);
-                    return (
-                      <div
-                        className="cal-drag-selection"
-                        style={{ top: `${top}px`, height: `${height}px` }}
-                      >
-                        <span className="cal-drag-time">{formatTime(startT)} – {formatTime(endT)}</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            })
-          )}
+                      );
+                    })()}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       ) : (
@@ -1503,7 +1608,7 @@ function Bookings({ data }) {
                     bookings
                       .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                       .map(b => (
-                        <tr key={b.id} onClick={() => handleOpenDetail(b)} className={`cursor-pointer${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}`}>
+                        <tr key={b.id} id={`booking-card-${b.id}`} onClick={() => handleOpenDetail(b)} className={`cursor-pointer${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}`}>
                           <td>
                             <div className="fw-600">{b.customers?.name || '-'}</div>
                             <div className="fs-12 text-muted">{b.customers?.phone}</div>
@@ -1561,28 +1666,29 @@ function Bookings({ data }) {
                     return (
                       <div
                         key={b.id}
+                        id={`booking-card-${b.id}`}
                         className={`booking-card-mobile${b.status === 'pending' && b.internal_note ? ' row-spam-warning' : ''}${isHold ? ' is-hold-disabled' : ''}`}
                         onClick={() => handleOpenDetail(b)}
                       >
-                      <div className="booking-card-mobile-header">
-                        <span className="booking-card-mobile-customer">{b.customers?.name || '-'}</span>
-                        <span className="booking-card-mobile-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</span>
+                        <div className="booking-card-mobile-header">
+                          <span className="booking-card-mobile-customer">{b.customers?.name || '-'}</span>
+                          <span className="booking-card-mobile-time">{formatTime(b.start_time)} - {formatTime(b.end_time)}</span>
+                        </div>
+                        <div className="booking-card-mobile-body">
+                          <span className="booking-card-mobile-service">
+                            <span className="service-icon-dot sm" style={{ background: b.services?.color || '#0d8a3f' }}></span>
+                            {b.services?.name || '-'}
+                          </span>
+                          <span className="booking-card-mobile-staff">{b.employees?.name || '-'}</span>
+                        </div>
+                        <div className="booking-card-mobile-footer">
+                          <span className={`badge badge-${b.status}`}>{b.status}</span>
+                          <span className="booking-card-mobile-price">{formatPrice(b.total_price)}</span>
+                        </div>
+                        {b.internal_note && <div className="fs-11 text-warning-orange">{b.internal_note}</div>}
                       </div>
-                      <div className="booking-card-mobile-body">
-                        <span className="booking-card-mobile-service">
-                          <span className="service-icon-dot sm" style={{ background: b.services?.color || '#0d8a3f' }}></span>
-                          {b.services?.name || '-'}
-                        </span>
-                        <span className="booking-card-mobile-staff">{b.employees?.name || '-'}</span>
-                      </div>
-                      <div className="booking-card-mobile-footer">
-                        <span className={`badge badge-${b.status}`}>{b.status}</span>
-                        <span className="booking-card-mobile-price">{formatPrice(b.total_price)}</span>
-                      </div>
-                      {b.internal_note && <div className="fs-11 text-warning-orange">{b.internal_note}</div>}
-                    </div>
-                  );
-                })
+                    );
+                  })
               )}
             </div>
           )}
@@ -1649,8 +1755,30 @@ function Bookings({ data }) {
             <div className="modal-body pt-0">
               {/* Anti-spam warning banner */}
               {detailEdit.internal_note && (
-                <div className="anti-spam-alert">
-                  <span className="anti-spam-alert-text">{detailEdit.internal_note}</span>
+                <div className="anti-spam-alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                  <span className="anti-spam-alert-text" style={{ flex: 1 }}>{detailEdit.internal_note}</span>
+                  <button
+                    className="anti-spam-dismiss-btn"
+                    onClick={(e) => handleDismissWarning(e, detailModal)}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      border: 'none',
+                      color: '#92400e',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '4px',
+                      borderRadius: '50%',
+                      transition: 'all 0.2s',
+                      width: '24px',
+                      height: '24px',
+                      flexShrink: 0
+                    }}
+                    title="Tắt cảnh báo"
+                  >
+                    <FiX size={14} />
+                  </button>
                 </div>
               )}
               {detailTab === 'schedule' ? (

@@ -1,10 +1,168 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../supabaseClient');
+const webpush = require('web-push');
+const bookingRateLimiter = require('../middleware/rateLimiter');
+
+function getRelativeDateLabel(dateStr) {
+  if (!dateStr) return '';
+  const bookingDate = new Date(dateStr + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  const bookingTime = bookingDate.getTime();
+  const todayTime = today.getTime();
+  const tomorrowTime = tomorrow.getTime();
+
+  if (bookingTime === todayTime) {
+    return 'hôm nay';
+  } else if (bookingTime === tomorrowTime) {
+    return 'ngày mai';
+  } else {
+    const day = String(bookingDate.getDate()).padStart(2, '0');
+    const month = String(bookingDate.getMonth() + 1).padStart(2, '0');
+    return `${day}/${month}`;
+  }
+}
+
+// Cache to deduplicate recent Web Push notifications (prevent multiple alerts for group bookings)
+const recentPushCache = new Map();
+
+// Clean up recent push cache every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of recentPushCache.entries()) {
+    if (now - timestamp > 60000) {
+      recentPushCache.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+async function notifyNewBooking(bookingData) {
+  try {
+    // 1) --- Deduplicate group booking push notifications ---
+    let phone = bookingData.customers?.phone || bookingData.customer_phone || '';
+    if (!phone && bookingData.customer_id) {
+      const { data: cust } = await supabase.from('customers').select('phone').eq('id', bookingData.customer_id).single();
+      if (cust) phone = cust.phone;
+    }
+
+    const date = bookingData.booking_date || '';
+    const time = bookingData.start_time || '';
+
+    if (phone && date && time) {
+      const cacheKey = `${phone}_${date}_${time}`;
+      const now = Date.now();
+      const lastSent = recentPushCache.get(cacheKey);
+
+      if (lastSent && (now - lastSent < 15000)) {
+        console.log(`✨ Duplicate booking.created event ignored for Web Push (Phone: ${phone}, Time: ${time})`);
+        return;
+      }
+      recentPushCache.set(cacheKey, now);
+    }
+
+    const { data: subscriptions, error: fetchErr } = await supabase
+      .from('push_subscriptions')
+      .select('*');
+
+    if (fetchErr) {
+      console.error('❌ Error fetching push subscriptions:', fetchErr);
+      return;
+    }
+
+    if (!subscriptions || subscriptions.length === 0) {
+      console.log('⚠️ No push subscriptions found — skipping VAPID push');
+      return;
+    }
+
+    // Deduplicate by endpoint: keep only the latest subscription per endpoint
+    const uniqueByEndpoint = new Map();
+    for (const sub of subscriptions) {
+      uniqueByEndpoint.set(sub.endpoint, sub);
+    }
+    const uniqueSubs = Array.from(uniqueByEndpoint.values());
+    const keepIds = new Set(uniqueSubs.map(s => s.id));
+
+    // If duplicates were found, clean them up in the background
+    if (uniqueSubs.length < subscriptions.length) {
+      const duplicateIds = subscriptions
+        .filter(sub => !keepIds.has(sub.id))
+        .map(sub => sub.id);
+      console.log(`🧹 Cleaning ${duplicateIds.length} duplicate push subscriptions`);
+      if (duplicateIds.length > 0) {
+        supabase.from('push_subscriptions').delete().in('id', duplicateIds)
+          .then(() => console.log('✅ Duplicate subscriptions cleaned up'))
+          .catch(err => console.error('❌ Failed to clean duplicates:', err));
+      }
+    }
+
+    console.log(`📨 Sending VAPID push to ${uniqueSubs.length} device(s)`);
+
+    // Phân tích dữ liệu khách hàng, dịch vụ và chi nhánh đồng bộ với Dashboard
+    let customerName = bookingData.customers?.name || bookingData.customer_name || '';
+    let serviceName = bookingData.services?.name || bookingData.service_name || '';
+    let branchName = bookingData.branches?.name || '';
+
+    // Nếu thiếu, tự động truy vấn thêm từ Supabase để đảm bảo tên luôn hiển thị chính xác
+    if (!customerName && bookingData.customer_id) {
+      const { data: cust } = await supabase.from('customers').select('name').eq('id', bookingData.customer_id).single();
+      if (cust) customerName = cust.name;
+    }
+    if (!serviceName && bookingData.service_id) {
+      const { data: svc } = await supabase.from('services').select('name').eq('id', bookingData.service_id).single();
+      if (svc) serviceName = svc.name;
+    }
+    if (!branchName && bookingData.branch_id) {
+      const { data: br } = await supabase.from('branches').select('name').eq('id', bookingData.branch_id).single();
+      if (br) branchName = br.name;
+    }
+
+    customerName = customerName || 'Khách Lạ';
+    serviceName = serviceName || 'Dịch vụ';
+    branchName = branchName || 'Chi nhánh';
+    const startTime = bookingData.start_time || '';
+
+    const relativeDate = getRelativeDateLabel(bookingData.booking_date);
+    const datePhrase = relativeDate ? ` vào ${relativeDate}` : '';
+
+    const payload = JSON.stringify({
+      title: 'Ý Ơi! Có lịch mới nè 🌸',
+      body: `Cục dàng ${customerName} vừa đặt hẹn "${serviceName}" lúc ${startTime.substring(0, 5)}${datePhrase} tại ${branchName} đó nghen!`,
+      url: '/bookings'
+    });
+
+    uniqueSubs.forEach(sub => {
+      const pushConfig = {
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: sub.p256dh,
+          auth: sub.auth
+        }
+      };
+
+      webpush.sendNotification(pushConfig, payload)
+        .then(() => console.log('✅ Push sent to endpoint:', sub.endpoint.slice(-30)))
+        .catch(async (err) => {
+          console.error('❌ Push failed for endpoint:', sub.endpoint.slice(-30), 'Status:', err.statusCode);
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            await supabase.from('push_subscriptions').delete().eq('id', sub.id);
+            console.log('🗑️ Removed expired subscription:', sub.endpoint.slice(-30));
+          }
+        });
+    });
+  } catch (err) {
+    console.error('Lỗi khi gửi thông báo đặt lịch mới:', err);
+  }
+}
+
 
 // Helper to get broadcastSSE from the app instance
 function getBroadcast(req) {
-  return req.app.get('broadcastSSE') || (() => {});
+  return req.app.get('broadcastSSE') || (() => { });
 }
 
 // Normalize Vietnamese diacritics for Latin search
@@ -75,7 +233,7 @@ router.get('/:id', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { service_id, branch_id, start_time, end_time: clientEndTime, employee_id, notes, customer_id, booking_date } = req.body;
+    const { service_id, branch_id, start_time, end_time: clientEndTime, employee_id, notes, customer_id, booking_date, internal_note } = req.body;
 
     // Basic validation
     if (!service_id || !branch_id || !start_time || !employee_id) {
@@ -147,7 +305,8 @@ router.put('/:id', async (req, res) => {
         start_time,
         end_time,
         total_price,
-        notes: notes !== undefined ? notes : booking.notes
+        notes: notes !== undefined ? notes : booking.notes,
+        internal_note: internal_note !== undefined ? internal_note : booking.internal_note
       })
       .eq('id', req.params.id)
       .select(`
@@ -182,7 +341,7 @@ router.put('/:id', async (req, res) => {
  *   customer_name, customer_phone, customer_email,
  *   booking_date, start_time, end_time, notes
  */
-router.post('/', async (req, res) => {
+router.post('/', bookingRateLimiter, async (req, res) => {
   try {
     const {
       branch_id, service_id, duration_minutes, num_guests,
@@ -637,4 +796,5 @@ async function fireWebhooks(event, bookings) {
   }
 }
 
+router.notifyNewBooking = notifyNewBooking;
 module.exports = router;

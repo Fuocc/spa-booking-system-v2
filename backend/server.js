@@ -37,7 +37,7 @@ const allowedOrigins = [
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    
+
     const isAllowed = allowedOrigins.some(allowedOrigin => {
       if (allowedOrigin instanceof RegExp) {
         return allowedOrigin.test(origin);
@@ -68,12 +68,15 @@ app.use('/api/services', require('./routes/services'));
 app.use('/api/employees', require('./routes/employees'));
 app.use('/api/customers', require('./routes/customers'));
 app.use('/api/beds', require('./routes/beds'));
-app.use('/api/bookings', require('./routes/bookings'));
+const bookingsRouter = require('./routes/bookings');
+app.use('/api/bookings', bookingsRouter);
 app.use('/api/availability', require('./routes/availability'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/employee-schedules', require('./routes/employeeSchedules'));
 app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/notifications', require('./routes/notifications'));
+
 
 // Trigger endpoint to broadcast SSE events from external servers (e.g. landing page backend)
 app.post('/api/events/trigger', (req, res) => {
@@ -81,6 +84,13 @@ app.post('/api/events/trigger', (req, res) => {
   if (event) {
     broadcastSSE(event, data);
     console.log(`📡 SSE Triggered externally: event=${event}`);
+    
+    // Nếu là sự kiện tạo đặt lịch mới từ Landing Page, tự động kích hoạt Web Push
+    if (event === 'booking.created' && typeof bookingsRouter.notifyNewBooking === 'function') {
+      console.log('🌸 Triggering Web Push for external guest booking...');
+      bookingsRouter.notifyNewBooking(data).catch(err => console.error('Web Push notify error:', err));
+    }
+    
     return res.json({ success: true });
   }
   res.status(400).json({ error: 'Missing event name' });
@@ -141,13 +151,13 @@ const os = require('os');
 function getLocalIps() {
   const interfaces = os.networkInterfaces();
   const results = [];
-  
+
   for (const name of Object.keys(interfaces)) {
     const lowerName = name.toLowerCase();
     if (lowerName.includes('loopback')) {
       continue;
     }
-    
+
     for (const net of interfaces[name]) {
       if (net.family === 'IPv4' && !net.internal) {
         results.push({ name, address: net.address });
@@ -166,7 +176,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📋 Frontend: http://localhost:${PORT}`);
   console.log(`------------------------------------------------------`);
   console.log(`📱 Access from Mobile/Tablet on the SAME Wi-Fi network:`);
-  
+
   if (localIps.length === 0) {
     console.log(`   (Không tìm thấy mạng WiFi, hãy kiểm tra kết nối)`);
   } else {
